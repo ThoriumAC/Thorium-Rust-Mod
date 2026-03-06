@@ -1,0 +1,75 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - develop
+      - staging
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download staging dependencies
+        if: github.ref == 'refs/heads/staging'
+        shell: pwsh
+        run: |
+          .\scripts\SteamDownloader.ps1 -steam_appid 258550 -steam_branch staging -platform linux -deps_dir "../raw-deps"
+          .\scripts\unprivate-dependencies.ps1 -outputPath "deps/linux/" -inputPath "raw-deps/linux/RustDedicated_Data/Managed"
+
+      - name: Download public dependencies
+        if: github.ref == 'refs/heads/develop' || github.event_name == 'release'
+        shell: pwsh
+        run: |
+          .\scripts\SteamDownloader.ps1 -steam_appid 258550 -platform linux -deps_dir "../raw-deps"
+          .\scripts\unprivate-dependencies.ps1 -outputPath "deps/linux/" -inputPath "raw-deps/linux/RustDedicated_Data/Managed"
+
+      - name: Build
+        run: dotnet build src/ThoriumRustMod/ThoriumRustMod.csproj -c Linux
+
+      - name: Get assembly version
+        id: version
+        shell: pwsh
+        run: |
+          [xml]$csproj = Get-Content src/ThoriumRustMod/ThoriumRustMod.csproj
+          $ver = ($csproj.Project.PropertyGroup | Where-Object { $_.AssemblyVersion }).AssemblyVersion
+          "version=v$ver" >> $env:GITHUB_OUTPUT
+
+      - name: Determine upload folder
+        id: folder
+        shell: pwsh
+        run: |
+          $folder = switch ('${{ github.ref }}') {
+            'refs/heads/develop' { 'development' }
+            'refs/heads/staging' { 'staging' }
+            default              { 'stable' }
+          }
+          "folder=$folder" >> $env:GITHUB_OUTPUT
+
+      - name: Upload to Cloudflare R2
+        shell: pwsh
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          aws s3 cp `
+            src/ThoriumRustMod/bin/Linux/Thorium.dll `
+            "s3://${{ secrets.R2_BUCKET_NAME }}/${{ steps.folder.outputs.folder }}/${{ steps.version.outputs.version }}.dll" `
+            --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+
+      - name: Update Cloudflare KV
+        shell: pwsh
+        run: |
+          $kvKey = "latest_${{ steps.folder.outputs.folder }}"
+          $version = "${{ steps.version.outputs.version }}"
+          $uri = "https://api.cloudflare.com/client/v4/accounts/${{ secrets.R2_ACCOUNT_ID }}/storage/kv/namespaces/${{ secrets.CF_KV_NAMESPACE_ID }}/values/$kvKey"
+          Invoke-RestMethod -Uri $uri -Method Put -Body $version `
+            -Headers @{ Authorization = "Bearer ${{ secrets.CF_API_TOKEN }}" } `
+            -ContentType "text/plain"
