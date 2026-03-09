@@ -20,7 +20,8 @@ public static class ThoriumClientService
 {
 
     private const int BUFFER_SIZE = 4096;
-    private const int RECONNECT_INTERVAL_SECONDS = 60;
+    private const int RECONNECT_INTERVAL_SECONDS = 10;
+    private const int MAX_RECONNECT_INTERVAL_SECONDS = 120;
     private const int MAX_PENDING_TEXT_MESSAGES = 120;
     private const int MAX_PENDING_BINARY_MESSAGES = 60;
     private const string SERVER_TOKEN_HEADER = "X-SERVER-TOKEN";
@@ -288,6 +289,7 @@ public static class ThoriumClientService
     private static void InitializeWebSocket()
     {
         _webSocket = new ClientWebSocket();
+        _webSocket.Options.KeepAliveInterval = TimeSpan.FromSeconds(15);
 
         try
         {
@@ -994,6 +996,13 @@ public static class ThoriumClientService
             else if (result.MessageType == WebSocketMessageType.Close)
             {
                 Log.Debug(() => "Server closed connection");
+                // Send Close response before tearing down
+                try
+                {
+                    if (_webSocket?.State == WebSocketState.CloseReceived)
+                        _webSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None).Wait(2000);
+                }
+                catch { }
                 HandleConnectionError();
                 yield break;
             }
@@ -1006,6 +1015,26 @@ public static class ThoriumClientService
     {
         _isConnected = false;
         _isConnecting = false;
+
+        ThoriumUnityScheduler.TryStopCoroutine(ref _receiveCoroutine);
+
+        // Close the WebSocket gracefully so the Gateway doesn't get an unexpected EOF
+        try
+        {
+            var ws = _webSocket;
+            if (ws != null && ws.State == WebSocketState.Open)
+            {
+                ws.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "reconnecting", CancellationToken.None)
+                    .ContinueWith(_ => { try { ws.Dispose(); } catch { } });
+            }
+            else
+            {
+                try { ws?.Dispose(); } catch { }
+            }
+        }
+        catch { }
+        _webSocket = null;
+
         OnDisconnected?.Invoke();
 
         _reconnectAttempts = 0;
@@ -1016,7 +1045,10 @@ public static class ThoriumClientService
     {
         while (true)
         {
-            yield return new WaitForSecondsRealtime(RECONNECT_INTERVAL_SECONDS);
+            var delay = Math.Min(
+                RECONNECT_INTERVAL_SECONDS * (1 << Math.Min(_reconnectAttempts, 4)),
+                MAX_RECONNECT_INTERVAL_SECONDS);
+            yield return new WaitForSecondsRealtime(delay);
 
             if (string.IsNullOrWhiteSpace(_currentUri))
                 continue;
@@ -1028,7 +1060,8 @@ public static class ThoriumClientService
                 continue;
 
             _reconnectAttempts++;
-            Log.Debug(() => $"Reconnect attempt #{_reconnectAttempts}...");
+            var attempt = _reconnectAttempts;
+            Log.Debug(() => $"Reconnect attempt #{attempt} (delay was {delay}s)...");
 
             var tcs = new TaskCompletionSource<bool>();
             _isConnecting = true;
