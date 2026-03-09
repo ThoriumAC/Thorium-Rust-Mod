@@ -715,16 +715,6 @@ public static class ThoriumClientService
                     BinaryEventWriter.WriteVector(localCache, entity.CenterPoint());
                     BinaryEventWriter.WriteVector(localCache, entity.bounds.extents);
 
-                    if (total == 0)
-                    {
-                        var endPos = localCache.Position;
-                        var entitySize = endPos - startPos;
-                        localCache.Position = startPos;
-                        var firstBytes = new byte[Math.Min(entitySize, 64)];
-                        _ = localCache.Read(firstBytes, 0, firstBytes.Length);
-                        localCache.Position = endPos;
-                    }
-
                     localEntityPackets++;
                     total++;
                 }

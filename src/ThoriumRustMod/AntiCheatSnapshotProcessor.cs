@@ -174,6 +174,8 @@ public static class AntiCheatSnapshotProcessor
 
             var payload = ThoriumBatchProtobufSerializer.Serialize(batch, caches);
 
+            caches?.Return();
+
             ThoriumClientService.SendBinaryFireAndForget(payload);
 
             var batchRef = batch;

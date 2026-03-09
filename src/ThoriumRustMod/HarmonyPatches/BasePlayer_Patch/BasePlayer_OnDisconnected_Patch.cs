@@ -17,17 +17,17 @@ internal static class BasePlayer_OnDisconnected_Patch
 
             DataHandler.SessionEventCount++;
             var SessionEventBuffer = DataHandler.SessionEventBuffer;
-            BinaryEventWriter.WriteInt64(SessionEventBuffer, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            BinaryEventWriter.WriteInt64(SessionEventBuffer, PlayerSnapshot.GetUnixTimestampMsCached());
             BinaryEventWriter.WriteBool(SessionEventBuffer, false);
-            BinaryEventWriter.WriteString(SessionEventBuffer, __instance.UserIDString ?? string.Empty);
-            BinaryEventWriter.WriteString(SessionEventBuffer, __instance.displayName ?? string.Empty);
+            BinaryEventWriter.WriteString(SessionEventBuffer, __instance.UserIDString);
+            BinaryEventWriter.WriteString(SessionEventBuffer, __instance.displayName);
 
             var steamId = Helpers.GetSteamIdOrZero(__instance);
             if (steamId == 0) return;
 
             var pos = __instance.transform.position;
             var combat = CombatData.Get();
-            combat.Weapon = string.Empty;
+            combat.Weapon = null;
             AntiCheatSnapshotProcessor.Enqueue(steamId,
                 PlayerSnapshot.Create(pos, __instance, SnapshotTypeEnums.Leave, combat));
 

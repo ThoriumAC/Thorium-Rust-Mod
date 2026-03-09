@@ -1,7 +1,6 @@
 using System;
-using System.Collections.Generic;
-using System.IO;
 using HarmonyLib;
+using ThoriumRustMod.Core;
 using ThoriumRustMod.HarmonyPatches.Utility;
 using ThoriumRustMod.Models;
 using ThoriumRustMod.Services;
@@ -21,7 +20,7 @@ internal static class PatchBaseNetworkableKill
         }
         catch (Exception ex)
         {
-            File.WriteAllText("thorium_basenetworkable_kill_error.txt", ex.ToString());
+            Log.Error("Error in OnEntityKill: " + ex);
         }
     }
 
@@ -40,24 +39,15 @@ internal static class PatchBaseNetworkableKill
         var snapshot = new EventSnapshot
         {
             Tick = (long)(Time.time * 1000),
-            TickTimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            TickTimestampUnixMs = PlayerSnapshot.GetUnixTimestampMsCached(),
             TickIntervalMs = Time.deltaTime * 1000f,
             PosX = pos.x,
             PosY = pos.y,
             PosZ = pos.z,
             SnapshotType = SnapshotTypeEnums.EntityKill,
-            MouseDX = 0,
-            MouseDY = 0,
-            AimYaw = 0,
-            AimPitch = 0,
             EventType = "entity_kill",
-            EventData = new Dictionary<string, string>
-            {
-                ["prefabID"] = entity.prefabID.ToString(),
-                ["netID"] = id.ToString(),
-                ["owner"] = entity.OwnerID.ToString()
-            }
         };
+        snapshot.SetEntityKillData(entity.prefabID, id, ownerId);
 
         AntiCheatSnapshotProcessor.Enqueue(steamId, snapshot);
     }

@@ -39,16 +39,16 @@ public static class DataHandler
 
     public static void Reset()
     {
-        RpcEventBuffer?.Dispose();
-        KillEventBuffer?.Dispose();
-        SessionEventBuffer?.Dispose();
-        CombatEventBuffer?.Dispose();
-        EntityEventBuffer?.Dispose();
-        RpcEventBuffer = new MemoryStream(65536);
-        KillEventBuffer = new MemoryStream(16384);
-        SessionEventBuffer = new MemoryStream(4096);
-        CombatEventBuffer = new MemoryStream(16384);
-        EntityEventBuffer = new MemoryStream(65536);
+        RpcEventBuffer.SetLength(0);
+        RpcEventBuffer.Position = 0;
+        KillEventBuffer.SetLength(0);
+        KillEventBuffer.Position = 0;
+        SessionEventBuffer.SetLength(0);
+        SessionEventBuffer.Position = 0;
+        CombatEventBuffer.SetLength(0);
+        CombatEventBuffer.Position = 0;
+        EntityEventBuffer.SetLength(0);
+        EntityEventBuffer.Position = 0;
         RpcEventCount = 0;
         KillEventCount = 0;
         SessionEventCount = 0;

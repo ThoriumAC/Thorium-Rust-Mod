@@ -18,13 +18,13 @@ internal static class BasePlayer_PlayerInit_Patch
             DataHandler.SessionEventCount++;
             var SessionEventBuffer = DataHandler.SessionEventBuffer;
 
-            var ip = __instance.Connection?.ipaddress ?? string.Empty;
+            var ip = __instance.Connection?.ipaddress;
 
-            BinaryEventWriter.WriteInt64(SessionEventBuffer, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            BinaryEventWriter.WriteInt64(SessionEventBuffer, PlayerSnapshot.GetUnixTimestampMsCached());
             BinaryEventWriter.WriteBool(SessionEventBuffer, true);
-            BinaryEventWriter.WriteString(SessionEventBuffer, __instance.UserIDString ?? string.Empty);
+            BinaryEventWriter.WriteString(SessionEventBuffer, __instance.UserIDString);
             BinaryEventWriter.WriteString(SessionEventBuffer, ip);
-            BinaryEventWriter.WriteString(SessionEventBuffer, __instance.displayName ?? string.Empty);
+            BinaryEventWriter.WriteString(SessionEventBuffer, __instance.displayName);
 
             var steamId = Helpers.GetSteamIdOrZero(__instance);
             if (steamId == 0) return;

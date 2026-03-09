@@ -8,14 +8,22 @@ namespace ThoriumRustMod.Models;
 /// </summary>
 public class EventSnapshot : PlayerSnapshot
 {
-    /// <summary>
-    /// Short event type identifier, e.g. "entity_kill", "stash_exposed"
-    /// </summary>
     public string EventType { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Optional additional data about the event (key/value pairs)
-    /// Kept as strings for simplicity and to avoid direct dependency on complex types.
-    /// </summary>
     public Dictionary<string, string> EventData { get; set; } = new();
+
+    // Pre-stored numeric fields to avoid ToString() allocations during serialization.
+    // The serializer checks these before falling back to EventData dictionary.
+    public uint EntityPrefabId { get; set; }
+    public long EntityNetId { get; set; }
+    public ulong EntityOwnerId { get; set; }
+    public bool HasEntityKillData { get; set; }
+
+    public void SetEntityKillData(uint prefabId, long netId, ulong ownerId)
+    {
+        EntityPrefabId = prefabId;
+        EntityNetId = netId;
+        EntityOwnerId = ownerId;
+        HasEntityKillData = true;
+    }
 }

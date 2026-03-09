@@ -75,9 +75,9 @@ internal static class BasePlayer_Hurt_Patch
                 DataHandler.CombatEventCount++;
                 var CombatEventBuffer = DataHandler.CombatEventBuffer;
                 var itemid = 0;
-                var weaponShortname = string.Empty;
+                string? weaponShortname = null;
                 var isProjectile = false;
-                var boneName = string.Empty;
+                string? boneName = null;
 
                 try
                 {
@@ -98,7 +98,7 @@ internal static class BasePlayer_Hurt_Patch
                         var skeleton = __instance.skeletonProperties;
                         var bone = skeleton?.FindBone(info.HitBone);
                         if (bone != null)
-                            boneName = bone.boneName ?? string.Empty;
+                            boneName = bone.boneName;
                     }
                 }
                 catch

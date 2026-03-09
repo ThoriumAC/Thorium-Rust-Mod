@@ -25,9 +25,9 @@ internal static class ServerMgr_OnPlayerTick_Patch
 
             var position = packet.read.Position;
 
-            var playerTick = packet.read.Proto(null as PlayerTick);
+            var playerTick = Facepunch.Pool.Get<PlayerTick>();
+            PlayerTick.Deserialize(packet.read.stream, playerTick, false);
             packet.read.Position = position;
-            if (playerTick == null) return;
 
             var inputState = playerTick.inputState;
             var modelState = playerTick.modelState;
@@ -65,6 +65,10 @@ internal static class ServerMgr_OnPlayerTick_Patch
             snapshot.InheritedVelocityZ = inheritedVel.z;
 
             AntiCheatSnapshotProcessor.Enqueue(steamId, snapshot);
+
+            playerTick.ResetToPool();
+            playerTick.ShouldPool = true;
+            Facepunch.Pool.Free(ref playerTick);
         }
         catch
         {

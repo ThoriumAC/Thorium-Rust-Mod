@@ -54,22 +54,22 @@ internal static class ThoriumBatchProtobufSerializer
         foreach (var s in batch.Snapshots)
         {
             if (s == null) continue;
-            w.WriteEmbeddedMessage(8, inner => WriteAntiCheatSnapshot(inner, s));
+            w.WriteEmbeddedMessage(8, s, static (inner, snap) => WriteAntiCheatSnapshot(inner, snap));
         }
 
         if (caches != null)
         {
-            WriteOptionalBytes(w, 9, caches.RpcEventBytes);
-            WriteOptionalBytes(w, 10, caches.KillEventBytes);
-            WriteOptionalBytes(w, 11, caches.SessionEventBytes);
-            WriteOptionalBytes(w, 12, caches.CombatEventBytes);
+            WriteOptionalBytes(w, 9, caches.RpcEventBytes, caches.RpcEventLength);
+            WriteOptionalBytes(w, 10, caches.KillEventBytes, caches.KillEventLength);
+            WriteOptionalBytes(w, 11, caches.SessionEventBytes, caches.SessionEventLength);
+            WriteOptionalBytes(w, 12, caches.CombatEventBytes, caches.CombatEventLength);
 
             WriteOptionalInt64(w, 13, caches.RpcEventCount);
             WriteOptionalInt64(w, 14, caches.KillEventCount);
             WriteOptionalInt64(w, 15, caches.SessionEventCount);
             WriteOptionalInt64(w, 16, caches.CombatEventCount);
 
-            WriteOptionalBytes(w, 17, caches.EntityEventBytes);
+            WriteOptionalBytes(w, 17, caches.EntityEventBytes, caches.EntityEventLength);
             WriteOptionalInt64(w, 18, caches.EntityEventCount);
         }
     }
@@ -90,7 +90,7 @@ internal static class ThoriumBatchProtobufSerializer
         foreach (var ps in snapshot.Snapshots)
         {
             if (ps == null) continue;
-            w.WriteEmbeddedMessage(2, inner => WritePlayerSnapshot(inner, ps));
+            w.WriteEmbeddedMessage(2, ps, static (inner, snap) => WritePlayerSnapshot(inner, snap));
         }
     }
 
@@ -201,7 +201,7 @@ internal static class ThoriumBatchProtobufSerializer
             s.CombatData.LastTargetId != null || s.CombatData.LastAttackTimeUnixMs != 0 || 
             !string.IsNullOrEmpty(s.CombatData.Weapon)))
         {
-            w.WriteEmbeddedMessage(18, inner => WriteCombatData(inner, s.CombatData));
+            w.WriteEmbeddedMessage(18, s.CombatData, static (inner, cd) => WriteCombatData(inner, cd));
         }
 
         if (s is EventSnapshot es)
@@ -212,17 +212,25 @@ internal static class ThoriumBatchProtobufSerializer
                 w.WriteString(es.EventType);
             }
 
-            foreach (var kvp in es.EventData)
+            if (es.HasEntityKillData)
             {
-                if (kvp.Key == null || kvp.Value == null) continue;
-                // map entry is an embedded message with fields: 1=key, 2=value
-                w.WriteEmbeddedMessage(20, entry =>
+                WriteMapEntry(w, "prefabID", es.EntityPrefabId);
+                WriteMapEntry(w, "netID", es.EntityNetId);
+                WriteMapEntry(w, "owner", es.EntityOwnerId);
+            }
+            else
+            {
+                foreach (var kvp in es.EventData)
                 {
-                    entry.WriteTag(1, ProtobufWireType.LengthDelimited);
-                    entry.WriteString(kvp.Key);
-                    entry.WriteTag(2, ProtobufWireType.LengthDelimited);
-                    entry.WriteString(kvp.Value);
-                });
+                    if (kvp.Key == null || kvp.Value == null) continue;
+                    w.WriteEmbeddedMessage(20, kvp, static (entry, kv) =>
+                    {
+                        entry.WriteTag(1, ProtobufWireType.LengthDelimited);
+                        entry.WriteString(kv.Key);
+                        entry.WriteTag(2, ProtobufWireType.LengthDelimited);
+                        entry.WriteString(kv.Value);
+                    });
+                }
             }
         }
 
@@ -372,12 +380,12 @@ internal static class ThoriumBatchProtobufSerializer
         }
     }
 
-    private static void WriteOptionalBytes(ProtobufWireWriter w, int fieldNumber, byte[]? data)
+    private static void WriteOptionalBytes(ProtobufWireWriter w, int fieldNumber, byte[]? data, int length)
     {
-        if (data is { Length: > 0 })
+        if (data != null && length > 0)
         {
             w.WriteTag(fieldNumber, ProtobufWireType.LengthDelimited);
-            w.WriteBytes(data);
+            w.WriteBytes(data, length);
         }
     }
 
@@ -399,4 +407,24 @@ internal static class ThoriumBatchProtobufSerializer
         w.WriteFixed32(value);
     }
 
+    private static void WriteMapEntry(ProtobufWireWriter w, string key, ulong value)
+    {
+        w.WriteEmbeddedMessage(20, (key, value), static (entry, state) =>
+        {
+            entry.WriteTag(1, ProtobufWireType.LengthDelimited);
+            entry.WriteString(state.key);
+            entry.WriteTag(2, ProtobufWireType.LengthDelimited);
+            entry.WriteNumericString(state.value);
+        });
+    }
+
+    private static void WriteMapEntry(ProtobufWireWriter w, string key, long value)
+    {
+        WriteMapEntry(w, key, (ulong)value);
+    }
+
+    private static void WriteMapEntry(ProtobufWireWriter w, string key, uint value)
+    {
+        WriteMapEntry(w, key, (ulong)value);
+    }
 }

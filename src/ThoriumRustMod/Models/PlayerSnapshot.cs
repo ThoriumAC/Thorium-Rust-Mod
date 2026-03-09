@@ -100,7 +100,7 @@ public class PlayerSnapshot : Pool.IPooled
     private static long _cachedUnixMs;
     private static float _lastUnixMsUpdate;
 
-    private static long GetUnixTimestampMs()
+    public static long GetUnixTimestampMsCached()
     {
         var now = Time.realtimeSinceStartup;
         if (now - _lastUnixMsUpdate > 0.1f)
@@ -110,6 +110,8 @@ public class PlayerSnapshot : Pool.IPooled
         }
         return _cachedUnixMs;
     }
+
+    private static long GetUnixTimestampMs() => GetUnixTimestampMsCached();
 
     /// <summary>
     /// Server tick when this snapshot was captured (in milliseconds)

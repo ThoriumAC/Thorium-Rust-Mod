@@ -36,18 +36,17 @@ internal static class BasePlayer_Die_Patch
             var distance = Vector3.Distance(__instance.transform.position,
                 initiator.transform.position);
 
-            var boneName = "N/A";
+            string? boneName = null;
             try
             {
                 var skeleton = __instance.skeletonProperties;
-                var bone = skeleton?.FindBone(info.HitBone)?.boneName;
-                if (!string.IsNullOrEmpty(bone)) boneName = bone;
+                boneName = skeleton?.FindBone(info.HitBone)?.boneName;
             }
             catch
             {
             }
 
-            BinaryEventWriter.WriteInt64(KillEventBuffer, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            BinaryEventWriter.WriteInt64(KillEventBuffer, PlayerSnapshot.GetUnixTimestampMsCached());
             BinaryEventWriter.WriteString(KillEventBuffer, __instance.UserIDString);
             BinaryEventWriter.WriteString(KillEventBuffer, initiator.UserIDString);
             BinaryEventWriter.WriteString(KillEventBuffer, __instance.displayName);

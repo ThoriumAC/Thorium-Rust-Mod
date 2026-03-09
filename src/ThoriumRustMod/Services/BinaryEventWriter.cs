@@ -8,7 +8,9 @@ namespace ThoriumRustMod.Services;
 public static class BinaryEventWriter
 {
     [ThreadStatic] private static byte[]? _buf;
-    private static byte[] Buf => _buf ??= new byte[8];
+    private static byte[] Buf => _buf ??= new byte[12];
+
+    [ThreadStatic] private static byte[]? _strBuf;
 
     public static void WriteBool(Stream stream, bool val)
     {
@@ -18,11 +20,19 @@ public static class BinaryEventWriter
     public static void WriteString(Stream stream, string s)
     {
         s ??= string.Empty;
-        var bytes = Encoding.UTF8.GetBytes(s);
+        if (s.Length == 0)
+        {
+            WriteInt32Raw(stream, 0);
+            return;
+        }
 
-        WriteInt32Raw(stream, bytes.Length);
-        if (bytes.Length > 0)
-            stream.Write(bytes, 0, bytes.Length);
+        var maxBytes = Encoding.UTF8.GetMaxByteCount(s.Length);
+        if (_strBuf == null || _strBuf.Length < maxBytes)
+            _strBuf = new byte[Math.Max(maxBytes, 256)];
+
+        var count = Encoding.UTF8.GetBytes(s, 0, s.Length, _strBuf, 0);
+        WriteInt32Raw(stream, count);
+        stream.Write(_strBuf, 0, count);
     }
 
     public static void WriteUint(Stream stream, uint v)
@@ -70,11 +80,16 @@ public static class BinaryEventWriter
         stream.Write(b, 0, 4);
     }
 
-    public static void WriteVector(Stream stream, Vector3 v)
+    public static unsafe void WriteVector(Stream stream, Vector3 v)
     {
-        WriteSingle(stream, v.x);
-        WriteSingle(stream, v.y);
-        WriteSingle(stream, v.z);
+        var b = Buf;
+        var x = *(int*)&v.x;
+        b[0] = (byte)x; b[1] = (byte)(x >> 8); b[2] = (byte)(x >> 16); b[3] = (byte)(x >> 24);
+        var y = *(int*)&v.y;
+        b[4] = (byte)y; b[5] = (byte)(y >> 8); b[6] = (byte)(y >> 16); b[7] = (byte)(y >> 24);
+        var z = *(int*)&v.z;
+        b[8] = (byte)z; b[9] = (byte)(z >> 8); b[10] = (byte)(z >> 16); b[11] = (byte)(z >> 24);
+        stream.Write(b, 0, 12);
     }
 
     private static void WriteInt32Raw(Stream stream, int v)

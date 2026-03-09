@@ -1,9 +1,7 @@
 using System;
-using System.Buffers;
 using HarmonyLib;
 using Network;
 using ThoriumRustMod.Services;
-using UnityEngine;
 
 namespace ThoriumRustMod.HarmonyPatches._OnRpcMessage_Patch;
 
@@ -26,9 +24,8 @@ internal static class BaseNetworkable_OnRpcMessage_Patch
             BasePlayer? player;
             uint rpcId;
             NetworkableId entityId;
-            var rawPacketData = Array.Empty<byte>();
-            byte[]? rentedBuffer = null;
-            int rawPacketLength = 0;
+            byte[]? rawBuffer = null;
+            int rawLength = 0;
 
             try
             {
@@ -41,10 +38,8 @@ internal static class BaseNetworkable_OnRpcMessage_Patch
                 var payloadStream = readStream.stream;
                 if (payloadStream != null && payloadStream._length > 0 && payloadStream._buffer != null)
                 {
-                    rawPacketLength = payloadStream._length;
-                    rentedBuffer = ArrayPool<byte>.Shared.Rent(rawPacketLength);
-                    rawPacketData = rentedBuffer;
-                    Buffer.BlockCopy(payloadStream._buffer, 0, rawPacketData, 0, rawPacketLength);
+                    rawBuffer = payloadStream._buffer;
+                    rawLength = payloadStream._length;
                 }
             }
             catch
@@ -75,17 +70,14 @@ internal static class BaseNetworkable_OnRpcMessage_Patch
 
             BinaryEventWriter.WriteInt32(cache, 1);
             BinaryEventWriter.WriteUint(cache, rpcId);
-            BinaryEventWriter.WriteString(cache, player?.UserIDString ?? string.Empty);
+            BinaryEventWriter.WriteString(cache, player?.UserIDString);
             BinaryEventWriter.WriteInt64(cache, (long)entityId.Value);
-            BinaryEventWriter.WriteSingle(cache, Time.time);
-            BinaryEventWriter.WriteInt32(cache, Time.frameCount);
-            BinaryEventWriter.WriteVector(cache, player != null ? player.transform.position : Vector3.zero);
-            BinaryEventWriter.WriteInt32(cache, -(rawPacketLength + 1));
-            if (rawPacketLength > 0)
-                cache.Write(rawPacketData, 0, rawPacketLength);
-
-            if (rentedBuffer != null)
-                ArrayPool<byte>.Shared.Return(rentedBuffer);
+            BinaryEventWriter.WriteSingle(cache, UnityEngine.Time.time);
+            BinaryEventWriter.WriteInt32(cache, UnityEngine.Time.frameCount);
+            BinaryEventWriter.WriteVector(cache, player != null ? player.transform.position : UnityEngine.Vector3.zero);
+            BinaryEventWriter.WriteInt32(cache, -(rawLength + 1));
+            if (rawLength > 0)
+                cache.Write(rawBuffer!, 0, rawLength);
         }
         catch
         {

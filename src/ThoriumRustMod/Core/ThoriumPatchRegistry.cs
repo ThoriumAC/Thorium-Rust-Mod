@@ -48,10 +48,6 @@ internal static class ThoriumPatchRegistry
                 () => AccessTools.Method(typeof(BasePlayer), nameof(BasePlayer.Hurt), new[] { typeof(HitInfo) }),
                 prefix: new HarmonyMethod(typeof(BasePlayer_Hurt_Patch), "Prefix")) &&
 
-            Apply("PlayerInventory.MoveItem",
-                () => AccessTools.Method(typeof(PlayerInventory), nameof(PlayerInventory.MoveItem)),
-                prefix: new HarmonyMethod(typeof(BasePlayer_MoveItem_Patch), "Prefix")) &&
-
             Apply("BasePlayer.OnDisconnected",
                 () => AccessTools.Method(typeof(BasePlayer), nameof(BasePlayer.OnDisconnected)),
                 prefix: new HarmonyMethod(typeof(BasePlayer_OnDisconnected_Patch), "Prefix")) &&

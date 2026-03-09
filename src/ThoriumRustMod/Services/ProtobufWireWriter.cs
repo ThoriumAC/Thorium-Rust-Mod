@@ -53,7 +53,15 @@ internal sealed class ProtobufWireWriter
         var ms = RentStream();
         var w = new ProtobufWireWriter(ms);
         write(w);
-        var result = ms.ToArray();
+        var len = (int)ms.Length;
+        var result = new byte[len];
+        if (ms.TryGetBuffer(out var seg))
+            Buffer.BlockCopy(seg.Array!, seg.Offset, result, 0, len);
+        else
+        {
+            ms.Position = 0;
+            ms.Read(result, 0, len);
+        }
         ReturnStream(ms);
         return result;
     }
@@ -94,13 +102,50 @@ internal sealed class ProtobufWireWriter
         _stream.Write(buf);
     }
 
+    [ThreadStatic]
+    private static byte[]? _strBuf;
+
     public void WriteString(string? value)
     {
         value ??= string.Empty;
-        var bytes = Encoding.UTF8.GetBytes(value);
-        WriteVarint((uint)bytes.Length);
-        if (bytes.Length > 0)
-            _stream.Write(bytes, 0, bytes.Length);
+        if (value.Length == 0)
+        {
+            WriteVarint(0u);
+            return;
+        }
+
+        var maxBytes = Encoding.UTF8.GetMaxByteCount(value.Length);
+        if (_strBuf == null || _strBuf.Length < maxBytes)
+            _strBuf = new byte[Math.Max(maxBytes, 256)];
+
+        var count = Encoding.UTF8.GetBytes(value, 0, value.Length, _strBuf, 0);
+        WriteVarint((uint)count);
+        _stream.Write(_strBuf, 0, count);
+    }
+
+    [ThreadStatic]
+    private static byte[]? _numBuf;
+
+    public void WriteNumericString(ulong value)
+    {
+        if (value == 0)
+        {
+            WriteVarint(1u);
+            _stream.WriteByte((byte)'0');
+            return;
+        }
+
+        _numBuf ??= new byte[20]; // max digits for ulong
+        var pos = 20;
+        var v = value;
+        while (v > 0)
+        {
+            _numBuf[--pos] = (byte)('0' + (v % 10));
+            v /= 10;
+        }
+        var len = 20 - pos;
+        WriteVarint((uint)len);
+        _stream.Write(_numBuf, pos, len);
     }
 
     public void WriteBytes(byte[]? value)
@@ -114,12 +159,44 @@ internal sealed class ProtobufWireWriter
         _stream.Write(value, 0, value.Length);
     }
 
+    public void WriteBytes(byte[] value, int length)
+    {
+        if (value == null || length <= 0)
+        {
+            WriteVarint(0u);
+            return;
+        }
+        WriteVarint((uint)length);
+        _stream.Write(value, 0, length);
+    }
+
     public void WriteEmbeddedMessage(int fieldNumber, Action<ProtobufWireWriter> write)
     {
         WriteTag(fieldNumber, ProtobufWireType.LengthDelimited);
         var ms = RentStream();
         var innerWriter = new ProtobufWireWriter(ms);
         write(innerWriter);
+        var len = (int)ms.Length;
+        WriteVarint((uint)len);
+        if (len > 0)
+        {
+            if (ms.TryGetBuffer(out var seg))
+                _stream.Write(seg.Array!, seg.Offset, len);
+            else
+            {
+                ms.Position = 0;
+                ms.CopyTo(_stream);
+            }
+        }
+        ReturnStream(ms);
+    }
+
+    public void WriteEmbeddedMessage<TState>(int fieldNumber, TState state, Action<ProtobufWireWriter, TState> write)
+    {
+        WriteTag(fieldNumber, ProtobufWireType.LengthDelimited);
+        var ms = RentStream();
+        var innerWriter = new ProtobufWireWriter(ms);
+        write(innerWriter, state);
         var len = (int)ms.Length;
         WriteVarint((uint)len);
         if (len > 0)

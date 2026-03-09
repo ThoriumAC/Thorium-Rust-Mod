@@ -21,9 +21,9 @@ public class Azure_OnEntityBuilt_Patch
 
             BinaryEventWriter.WriteBool(cache, true);
             BinaryEventWriter.WriteInt64(cache, (long)entity.net.ID.Value);
-            BinaryEventWriter.WriteString(cache, player.UserIDString ?? string.Empty);
+            BinaryEventWriter.WriteString(cache, player.UserIDString);
             BinaryEventWriter.WriteUint(cache, entity.prefabID);
-            BinaryEventWriter.WriteString(cache, entity.ShortPrefabName ?? string.Empty);
+            BinaryEventWriter.WriteString(cache, entity.ShortPrefabName);
             BinaryEventWriter.WriteVector(cache, entity.ServerPosition);
             BinaryEventWriter.WriteVector(cache, entity.ServerRotation.eulerAngles);
             BinaryEventWriter.WriteVector(cache, entity.CenterPoint());
