@@ -989,6 +989,12 @@ public static class ThoriumClientService
             }
             else if (result.MessageType == WebSocketMessageType.Binary)
             {
+                // Skip heartbeat frames (single byte 0x01) sent by Gateway to keep Cloudflare alive
+                if (result.Count == 1 && buffer[0] == 0x01)
+                {
+                    yield return null;
+                    continue;
+                }
                 var data = new byte[result.Count];
                 Array.Copy(buffer, data, result.Count);
                 OnBinaryMessageReceived?.Invoke(data);
