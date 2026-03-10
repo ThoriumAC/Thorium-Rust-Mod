@@ -17,6 +17,9 @@ public class ThoriumLoader : IHarmonyModHooks
     public const string BACKEND_URI_DEV = "gateway-dev.thorium.ac";
     private const int CONNECTION_TIMEOUT_MS = 5000;
 
+    public static string Version =>
+        System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0.0";
+
     public static bool __serverStarted;
     public static string MAP_HASH = "";
     public static Dictionary<uint, Action<BasePlayer, BaseEntity?>> RpcInterceptors = new();
@@ -28,6 +31,7 @@ public class ThoriumLoader : IHarmonyModHooks
     {
         try
         {
+            Log.Info($"Thorium v{Version} loading...");
             InitializeOnMainThread();
 
             _isOldBuild = ThoriumAutoUpdater.GetCurrentDllPath()

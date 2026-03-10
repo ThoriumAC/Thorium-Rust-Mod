@@ -19,6 +19,7 @@ public static class ConsoleCommands
         {
             if (ConsoleSystem.Index.Server.Dict == null) return;
             RegisterCommand("status", "Displays the status of the Thorium mod.", true, true, true, ExecuteStatusCommand);
+            RegisterCommand("version", "Displays the Thorium mod version.", true, true, true, ExecuteVersionCommand);
             RegisterCommand("setup", "Sets up the Thorium server token. Usage: thorium.setup <token>", false, true, false, ExecuteSetupCommand);
             RegisterCommand("debug", "Toggles debug logging. Usage: thorium.debug [true|false]", false, true, false, ExecuteDebugCommand);
         }
@@ -33,6 +34,7 @@ public static class ConsoleCommands
         {
             if (ConsoleSystem.Index.Server.Dict == null) return;
             UnregisterCommand("status");
+            UnregisterCommand("version");
             UnregisterCommand("setup");
             UnregisterCommand("debug");
         }
@@ -164,6 +166,11 @@ public static class ConsoleCommands
             ThoriumClientService.EnsureReconnectLoopRunning();
     }
 
+    private static void ExecuteVersionCommand(ConsoleSystem.Arg arg)
+    {
+        arg.ReplyWith($"Thorium v{ThoriumLoader.Version}");
+    }
+
     private static void ExecuteStatusCommand(ConsoleSystem.Arg arg)
     {
         try
@@ -174,7 +181,7 @@ public static class ConsoleCommands
                 ? $"{ThoriumConfigService.ServerToken.Substring(0, Math.Min(10, ThoriumConfigService.ServerToken.Length))}..."
                 : "N/A";
 
-            arg.ReplyWith($"Thorium Status:\n" +
+            arg.ReplyWith($"Thorium Status (v{ThoriumLoader.Version}):\n" +
                           $"- Token: {tokenStatus} ({tokenPreview})\n" +
                           $"- Connected: {ThoriumClientService.IsConnected}\n" +
                           $"- Debug: {(ThoriumConfigService.DebugMode ? "enabled" : "disabled")}\n" +
