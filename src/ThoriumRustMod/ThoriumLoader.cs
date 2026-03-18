@@ -250,7 +250,7 @@ public class ThoriumLoader : IHarmonyModHooks
         try { AntiCheatSnapshotProcessor.StopWorker(); }
         catch (Exception ex) { Log.Warning($"Error stopping snapshot processor: {ex.Message}\n{ex}"); }
 
-        try { _ = ThoriumClientService.DisconnectAsync(); }
+        try { ThoriumClientService.DisconnectSync(); }
         catch (Exception ex) { Log.Warning($"Error disconnecting backend client: {ex.Message}\n{ex}"); }
 
         try { ThoriumClientService.Reset(); } catch { }
