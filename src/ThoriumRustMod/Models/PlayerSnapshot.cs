@@ -21,9 +21,7 @@ public class PlayerSnapshot : Pool.IPooled
     {
         var snapshot = AntiCheatSnapshotProcessor.GetPooledSnapshot();
 
-        // Cache timestamp calculation (expensive operation)
-        var now = Time.time;
-        snapshot.Tick = (long)(now * 1000);
+        snapshot.Tick = System.Threading.Interlocked.Increment(ref _globalTickCounter);
         snapshot.TickTimestampUnixMs = GetUnixTimestampMs();
         snapshot.TickIntervalMs = Time.deltaTime * 1000f;
 
@@ -79,7 +77,7 @@ public class PlayerSnapshot : Pool.IPooled
             snapshot.VelZ = 0f;
         }
         
-        if (player.lifestate == BaseCombatEntity.LifeState.Dead)
+        if (player.IsDead())
         {
             snapshot.IsDead = true;
         }
@@ -95,6 +93,8 @@ public class PlayerSnapshot : Pool.IPooled
         
         return snapshot;
     }
+
+    private static long _globalTickCounter;
 
     // Cache for Unix timestamp to avoid DateTimeOffset allocations
     private static long _cachedUnixMs;
@@ -308,6 +308,21 @@ public class PlayerSnapshot : Pool.IPooled
     /// Ducking/crouching level (0-1 range)
     /// </summary>
     public float Ducking { get; set; }
+    
+    /// <summary>
+    /// Water factor (0-1 range) indicating how submerged the player is
+    /// </summary>
+    public float WaterFactor { get; set; }
+    
+    /// <summary>
+    /// If player is swimming
+    /// </summary>
+    public bool IsSwimming { get; set; }
+    
+    /// <summary>
+    /// If player's head is underwater
+    /// </summary>
+    public bool IsDiving { get; set; }
 
     public void EnterPool()
     {
@@ -343,6 +358,9 @@ public class PlayerSnapshot : Pool.IPooled
         PoseType = 0;
         InheritedVelocityX = 0f; InheritedVelocityY = 0f; InheritedVelocityZ = 0f;
         Ducking = 0f;
+        WaterFactor = 0f;
+        IsSwimming = false;
+        IsDiving = false;
     }
 
     public void LeavePool() { }

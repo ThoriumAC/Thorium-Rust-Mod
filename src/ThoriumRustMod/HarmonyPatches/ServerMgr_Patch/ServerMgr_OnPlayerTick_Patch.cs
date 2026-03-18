@@ -53,7 +53,7 @@ internal static class ServerMgr_OnPlayerTick_Patch
             snapshot.ParentId = playerTick.parentID.Value;
             snapshot.DeltaMs = playerTick.deltaMs;
 
-            snapshot.WaterLevel = modelState.waterLevel;
+            snapshot.WaterLevel = player.modelState.waterLevel;
             var lookDir = modelState.lookDir;
             snapshot.LookDirX = lookDir.x;
             snapshot.LookDirY = lookDir.y;
@@ -63,6 +63,9 @@ internal static class ServerMgr_OnPlayerTick_Patch
             snapshot.InheritedVelocityX = inheritedVel.x;
             snapshot.InheritedVelocityY = inheritedVel.y;
             snapshot.InheritedVelocityZ = inheritedVel.z;
+            snapshot.WaterFactor = player.WaterFactor();
+            snapshot.IsSwimming = player.IsSwimming();
+            snapshot.IsDiving = player.IsHeadUnderwater();
 
             AntiCheatSnapshotProcessor.Enqueue(steamId, snapshot);
 
