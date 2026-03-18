@@ -251,6 +251,40 @@ public static class ThoriumClientService
         await tcs.Task;
     }
 
+    /// <summary>
+    /// Synchronously sends a WebSocket close frame and disposes the socket.
+    /// Use this during plugin unload where the coroutine scheduler may be torn down
+    /// before an async disconnect coroutine gets a chance to run.
+    /// </summary>
+    public static void DisconnectSync()
+    {
+        if (!_isConnected && !_isConnecting)
+            return;
+
+        _isConnected = false;
+        _isConnecting = false;
+
+        ThoriumUnityScheduler.TryStopCoroutine(ref _receiveCoroutine);
+        ThoriumUnityScheduler.TryStopCoroutine(ref _reconnectCoroutine);
+
+        var ws = _webSocket;
+        _webSocket = null;
+
+        if (ws == null) return;
+
+        try
+        {
+            if (ws.State == WebSocketState.Open)
+                ws.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Plugin unloading", CancellationToken.None)
+                    .Wait(3000);
+        }
+        catch { }
+        finally
+        {
+            try { ws.Dispose(); } catch { }
+        }
+    }
+
     public static bool IsConnected => _isConnected && _webSocket?.State == WebSocketState.Open;
 
     public static bool IsConfigured => !string.IsNullOrWhiteSpace(token);
@@ -638,7 +672,7 @@ public static class ThoriumClientService
         const int maxSnapshotAttempts = 5;
 
         const int batchSize = 1000;
-        const int sendThreshold = 50000;
+        const int sendThreshold = 5000;
         var entityCount = 0;
         var total = 0;
         var batchesSent = 0;
@@ -804,6 +838,7 @@ public static class ThoriumClientService
             var payload = new ThoriumEventPayload
             {
                 EntityEventBytes = bytes,
+                EntityEventLength = bytes.Length,
                 EntityEventCount = entityPackets
             };
 

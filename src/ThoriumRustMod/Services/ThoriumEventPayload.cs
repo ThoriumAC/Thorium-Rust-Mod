@@ -69,6 +69,12 @@ internal sealed class ThoriumEventPayload
         ResetStream(DataHandler.CombatEventBuffer);
         ResetStream(DataHandler.EntityEventBuffer);
 
+        DataHandler.RpcEventCount = 0;
+        DataHandler.KillEventCount = 0;
+        DataHandler.SessionEventCount = 0;
+        DataHandler.CombatEventCount = 0;
+        DataHandler.EntityEventCount = 0;
+
         return payload.HasAnyBytes ? payload : null;
     }
 
