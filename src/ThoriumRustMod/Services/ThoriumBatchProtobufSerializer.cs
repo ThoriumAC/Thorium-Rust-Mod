@@ -147,6 +147,9 @@ internal static class ThoriumBatchProtobufSerializer
         //   bool on_ladder = 46;
         //   float average_latency = 47;
         //   int64 packet_loss = 48;
+        //   float water_factor = 49;
+        //   bool is_swimming = 50;
+        //   bool is_diving = 51;
         // }
         
         if (s.Tick != 0)
@@ -327,6 +330,20 @@ internal static class ThoriumBatchProtobufSerializer
         {
             w.WriteTag(48, ProtobufWireType.Varint);
             w.WriteInt64(s.PacketLoss);
+        }
+        
+        WriteFloatIfNonZero(w, 49, s.WaterFactor);
+        
+        if (s.IsSwimming)
+        {
+            w.WriteTag(50, ProtobufWireType.Varint);
+            w.WriteBool(true);
+        }
+        
+        if (s.IsDiving)
+        {
+            w.WriteTag(51, ProtobufWireType.Varint);
+            w.WriteBool(true);
         }
     }
 
