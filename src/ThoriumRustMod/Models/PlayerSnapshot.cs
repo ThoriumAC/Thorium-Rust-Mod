@@ -214,6 +214,7 @@ public class PlayerSnapshot : Pool.IPooled
                 SnapshotTypeEnums.StashBuried => "stash_buried",
                 SnapshotTypeEnums.StashOpened => "stash_opened",
                 SnapshotTypeEnums.StashBuiltOver => "stash_built_over",
+                SnapshotTypeEnums.Baseline => "baseline",
                 _ => "unknown",
             };
         }
