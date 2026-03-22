@@ -205,6 +205,7 @@ public class ThoriumLoader : IHarmonyModHooks
         {
             AntiCheatSnapshotProcessor.StartWorker();
             RegisterConsoleCommands();
+            ThoriumClientService.SubscribeResync();
             if (!_isOldBuild && ThoriumConfigService.AutoUpdateOnRunning)
                 ThoriumAutoUpdater.Subscribe();
             Log.Info("Thorium initialized successfully");
@@ -245,6 +246,7 @@ public class ThoriumLoader : IHarmonyModHooks
         __serverStarted = false;
 
         ThoriumAutoUpdater.Unsubscribe();
+        ThoriumClientService.UnsubscribeResync();
         ThoriumPatchRegistry.UnpatchAll();
 
         try { AntiCheatSnapshotProcessor.StopWorker(); }

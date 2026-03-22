@@ -42,6 +42,7 @@ public static class ThoriumClientService
     private const int MAX_SEND_QUEUE = 10;
     private static Models.ServerInfo? _serverInfo;
     private static string _mapHash = string.Empty;
+    private static volatile bool _isResyncing;
 
     private static readonly HttpClient _httpClient = new()
     {
@@ -69,6 +70,72 @@ public static class ThoriumClientService
     public static event Action? OnConnected;
 
     public static event Action? OnDisconnected;
+
+    public static void SubscribeResync() => OnMessageReceived += HandleResyncMessage;
+    public static void UnsubscribeResync() => OnMessageReceived -= HandleResyncMessage;
+
+    private static void HandleResyncMessage(string json)
+    {
+        ResyncMessage? msg;
+        try { msg = JsonConvert.DeserializeObject<ResyncMessage>(json); }
+        catch { return; }
+
+        if (msg?.Type != "resync") return;
+
+        if (!IsConnected)
+        {
+            Log.Debug(() => "Received resync request but not connected, ignoring");
+            return;
+        }
+
+        if (_isResyncing)
+        {
+            Log.Debug(() => "Resync already in progress, ignoring duplicate request");
+            return;
+        }
+
+        Log.Info("Received resync request from backend, resending initial data");
+        _isResyncing = true;
+        ThoriumUnityScheduler.RunCoroutine(ResyncRoutine());
+    }
+
+    private static IEnumerator ResyncRoutine()
+    {
+        // Resend server info
+        if (_serverInfo != null)
+        {
+            TaskCompletionSource<bool>? tcs = null;
+            try
+            {
+                var json = JsonConvert.SerializeObject(_serverInfo);
+                Log.Debug(() => $"Resync: sending server info");
+                tcs = new TaskCompletionSource<bool>();
+                EnqueueSend(Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, tcs);
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Resync: error serializing server info: {ex.Message}");
+            }
+
+            if (tcs != null)
+            {
+                while (!tcs.Task.IsCompleted)
+                    yield return null;
+            }
+        }
+
+        // Resend entities and player baselines
+        ThoriumUnityScheduler.RunCoroutine(SendInitialEntitiesRoutine());
+        ThoriumUnityScheduler.RunCoroutine(SendInitialPlayerBaselineRoutine());
+
+        _isResyncing = false;
+        Log.Info("Resync: initial data resend triggered");
+    }
+
+    private class ResyncMessage
+    {
+        [JsonProperty("type")] public string? Type { get; set; }
+    }
 
     public static void SetServerInfo(Models.ServerInfo serverInfo)
     {
