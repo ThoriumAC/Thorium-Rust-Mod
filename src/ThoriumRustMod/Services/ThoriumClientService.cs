@@ -22,8 +22,6 @@ public static class ThoriumClientService
     private const int BUFFER_SIZE = 4096;
     private const int RECONNECT_INTERVAL_SECONDS = 10;
     private const int MAX_RECONNECT_INTERVAL_SECONDS = 120;
-    private const int MAX_PENDING_TEXT_MESSAGES = 120;
-    private const int MAX_PENDING_BINARY_MESSAGES = 60;
     private const string SERVER_TOKEN_HEADER = "X-SERVER-TOKEN";
     private const string SESSION_TOKEN_HEADER = "X-SESSION-TOKEN";
     private const string AUTH_ENDPOINT = "/api/session/auth";
@@ -39,10 +37,9 @@ public static class ThoriumClientService
     private static string? _sessionToken;
     private static Coroutine? _receiveCoroutine;
     private static Coroutine? _reconnectCoroutine;
-    private static Queue<string> _pendingMessages = new();
-    private static Queue<byte[]> _pendingBinaryMessages = new();
-    private static bool _isFlushingPending;
-    private static bool _isSending;
+    private static readonly Queue<SendItem> _sendQueue = new(128);
+    private static Coroutine? _sendLoopCoroutine;
+    private const int MAX_SEND_QUEUE = 10;
     private static Models.ServerInfo? _serverInfo;
     private static string _mapHash = string.Empty;
 
@@ -50,6 +47,20 @@ public static class ThoriumClientService
     {
         Timeout = TimeSpan.FromSeconds(30)
     };
+
+    private readonly struct SendItem
+    {
+        public readonly byte[] Data;
+        public readonly WebSocketMessageType Type;
+        public readonly TaskCompletionSource<bool>? Tcs;
+
+        public SendItem(byte[] data, WebSocketMessageType type, TaskCompletionSource<bool>? tcs)
+        {
+            Data = data;
+            Type = type;
+            Tcs = tcs;
+        }
+    }
 
     public static event Action<string>? OnMessageReceived;
 
@@ -110,50 +121,14 @@ public static class ThoriumClientService
             throw new InvalidOperationException("WebSocket is not connected");
 
         var tcs = new TaskCompletionSource<bool>();
-        ThoriumUnityScheduler.RunCoroutine(SendTextRoutine(message, tcs));
+        EnqueueSend(Encoding.UTF8.GetBytes(message), WebSocketMessageType.Text, tcs);
         await tcs.Task;
     }
 
     public static void SendBinaryFireAndForget(byte[] data)
     {
         if (data is not { Length: > 0 }) return;
-        if (!IsConnected) { EnqueueBinaryWithLimit(data); return; }
-        ThoriumUnityScheduler.RunCoroutine(SendBinaryFireAndForgetRoutine(data));
-    }
-
-    private static IEnumerator SendBinaryFireAndForgetRoutine(byte[] data)
-    {
-        while (_isSending)
-            yield return null;
-
-        _isSending = true;
-
-        Task? sendTask = null;
-        try
-        {
-            sendTask = _webSocket?.SendAsync(new ArraySegment<byte>(data), WebSocketMessageType.Binary, true,
-                CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(() => $"Send error: {ex.Message}");
-            _isSending = false;
-            EnqueueBinaryWithLimit(data);
-            yield break;
-        }
-
-        if (sendTask == null) { _isSending = false; EnqueueBinaryWithLimit(data); yield break; }
-
-        while (!sendTask.IsCompleted)
-            yield return null;
-
-        _isSending = false;
-
-        if (sendTask.IsFaulted)
-        {
-            HandleConnectionError();
-            EnqueueBinaryWithLimit(data);
-        }
+        EnqueueSend(data, WebSocketMessageType.Binary, null);
     }
 
     public static async Task SendBinaryAsync(byte[] data)
@@ -165,7 +140,7 @@ public static class ThoriumClientService
             throw new InvalidOperationException("WebSocket is not connected");
 
         var tcs = new TaskCompletionSource<bool>();
-        ThoriumUnityScheduler.RunCoroutine(SendBinaryRoutine(data, tcs));
+        EnqueueSend(data, WebSocketMessageType.Binary, tcs);
         await tcs.Task;
     }
 
@@ -176,18 +151,20 @@ public static class ThoriumClientService
 
         if (!IsConnected)
         {
-            EnqueueBinaryWithLimit(data);
+            EnqueueSend(data, WebSocketMessageType.Binary, null);
             return;
         }
 
+        var tcs = new TaskCompletionSource<bool>();
+        EnqueueSend(data, WebSocketMessageType.Binary, tcs);
+
         try
         {
-            await SendBinaryAsync(data);
+            await tcs.Task;
         }
         catch (Exception ex)
         {
-            Log.Debug(() => $"Binary send failed, queuing: {ex.Message}");
-            EnqueueBinaryWithLimit(data);
+            Log.Debug(() => $"Binary send failed: {ex.Message}");
         }
     }
 
@@ -200,24 +177,24 @@ public static class ThoriumClientService
 
         if (!IsConnected)
         {
-            EnqueueTextWithLimit(json);
+            EnqueueSend(Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, null);
             return;
         }
 
+        var tcs = new TaskCompletionSource<bool>();
+        EnqueueSend(Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, tcs);
+
         try
         {
-            await SendMessageAsync(json);
+            await tcs.Task;
         }
         catch (Exception ex)
         {
-            Log.Debug(() => $"Send failed, queuing for retry: {ex.Message}");
-            EnqueueTextWithLimit(json);
+            Log.Debug(() => $"Send failed: {ex.Message}");
         }
     }
 
-    public static int PendingQueueCount => _pendingMessages.Count;
-
-    public static int PendingBinaryQueueCount => _pendingBinaryMessages.Count;
+    public static int PendingQueueCount => _sendQueue.Count;
 
     public static T? DeserializeJson<T>(string json) where T : class
     {
@@ -232,13 +209,37 @@ public static class ThoriumClientService
         }
     }
 
-    private static void StartFlushPendingMessages()
+    private static void StartSendLoop()
     {
-        if (_isFlushingPending)
-            return;
+        if (_sendLoopCoroutine != null) return;
+        _sendLoopCoroutine = ThoriumUnityScheduler.RunCoroutine(SendLoopRoutine());
+    }
 
-        _isFlushingPending = true;
-        ThoriumUnityScheduler.RunCoroutine(FlushPendingMessagesRoutine());
+    private static void StopSendLoop()
+    {
+        ThoriumUnityScheduler.TryStopCoroutine(ref _sendLoopCoroutine);
+
+        // Fail awaitable items; fire-and-forget items stay queued for reconnection
+        var count = _sendQueue.Count;
+        for (var i = 0; i < count; i++)
+        {
+            var item = _sendQueue.Dequeue();
+            if (item.Tcs != null)
+                item.Tcs.TrySetException(new InvalidOperationException("Connection lost"));
+            else
+                _sendQueue.Enqueue(item);
+        }
+    }
+
+    private static void EnqueueSend(byte[] data, WebSocketMessageType type, TaskCompletionSource<bool>? tcs)
+    {
+        while (_sendQueue.Count >= MAX_SEND_QUEUE)
+        {
+            var oldest = _sendQueue.Dequeue();
+            oldest.Tcs?.TrySetException(new InvalidOperationException("Send queue full"));
+        }
+
+        _sendQueue.Enqueue(new SendItem(data, type, tcs));
     }
 
     public static async Task DisconnectAsync()
@@ -264,6 +265,7 @@ public static class ThoriumClientService
         _isConnected = false;
         _isConnecting = false;
 
+        StopSendLoop();
         ThoriumUnityScheduler.TryStopCoroutine(ref _receiveCoroutine);
         ThoriumUnityScheduler.TryStopCoroutine(ref _reconnectCoroutine);
 
@@ -305,8 +307,7 @@ public static class ThoriumClientService
         OnBinaryMessageReceived = null;
         OnConnected = null;
         OnDisconnected = null;
-        _pendingMessages.Clear();
-        _pendingBinaryMessages.Clear();
+        _sendQueue.Clear();
         _isConnected = false;
         _isConnecting = false;
         _reconnectAttempts = 0;
@@ -314,8 +315,7 @@ public static class ThoriumClientService
         _sessionToken = null;
         _receiveCoroutine = null;
         _reconnectCoroutine = null;
-        _isFlushingPending = false;
-        _isSending = false;
+        _sendLoopCoroutine = null;
         _serverInfo = null;
         _mapHash = string.Empty;
     }
@@ -613,6 +613,8 @@ public static class ThoriumClientService
 
         ThoriumUnityScheduler.TryStopCoroutine(ref _reconnectCoroutine);
 
+        StartSendLoop();
+
         if (_serverInfo != null)
         {
             Exception? sendEx = null;
@@ -636,7 +638,7 @@ public static class ThoriumClientService
                 var serverInfoJson = JsonConvert.SerializeObject(_serverInfo);
                 Log.Debug(() => $"Sending server info: {serverInfoJson}");
                 sendTcs = new TaskCompletionSource<bool>();
-                ThoriumUnityScheduler.RunCoroutine(SendTextRoutine(serverInfoJson, sendTcs));
+                EnqueueSend(Encoding.UTF8.GetBytes(serverInfoJson), WebSocketMessageType.Text, sendTcs);
             }
             catch (Exception ex)
             {
@@ -659,10 +661,10 @@ public static class ThoriumClientService
             }
         }
 
-        StartFlushPendingMessages();
         StartReceiveLoop();
 
         ThoriumUnityScheduler.RunCoroutine(SendInitialEntitiesRoutine());
+        ThoriumUnityScheduler.RunCoroutine(SendInitialPlayerBaselineRoutine());
 
         tcs.TrySetResult(true);
     }
@@ -852,15 +854,98 @@ public static class ThoriumClientService
             yield break;
         }
 
-        if (!IsConnected)
-        {
-            EnqueueBinaryWithLimit(serialized);
-            yield break;
-        }
-
         yield return null;
 
         SendBinaryFireAndForget(serialized);
+    }
+
+    private static IEnumerator SendInitialPlayerBaselineRoutine()
+    {
+        yield return null;
+
+        var players = BasePlayer.activePlayerList;
+        if (players == null || players.Count == 0)
+        {
+            Log.Debug(() => "Initial player baseline: no active players");
+            yield break;
+        }
+
+        var count = 0;
+        var skipped = 0;
+
+        for (var i = 0; i < players.Count; i++)
+        {
+            var player = players[i];
+            if (player == null || player.IsDestroyed || player.net?.connection == null)
+            {
+                skipped++;
+                continue;
+            }
+
+            try
+            {
+                var steamId = (long)player.userID;
+                if (steamId <= 0) { skipped++; continue; }
+
+                var pos = player.transform.position;
+                var velocity = player.estimatedVelocity;
+                var combat = CombatData.FromPlayer(player);
+
+                var snapshot = PlayerSnapshot.Create(
+                    pos, player, SnapshotTypeEnums.Baseline,
+                    combat, velocity, player.IsOnGround());
+
+                snapshot.WaterLevel = player.modelState.waterLevel;
+                snapshot.WaterFactor = player.WaterFactor();
+                snapshot.IsSwimming = player.IsSwimming();
+                snapshot.IsDiving = player.IsHeadUnderwater();
+
+                var eyes = player.eyes;
+                if (eyes != null)
+                {
+                    snapshot.EyesPositionX = eyes.position.x;
+                    snapshot.EyesPositionY = eyes.position.y;
+                    snapshot.EyesPositionZ = eyes.position.z;
+                }
+
+                snapshot.ViewAnglesX = player.viewAngles.x;
+                snapshot.ViewAnglesY = player.viewAngles.y;
+                snapshot.ViewAnglesZ = player.viewAngles.z;
+
+                var modelState = player.modelState;
+                var lookDir = modelState.lookDir;
+                snapshot.LookDirX = lookDir.x;
+                snapshot.LookDirY = lookDir.y;
+                snapshot.LookDirZ = lookDir.z;
+                snapshot.PoseType = modelState.poseType;
+
+                var inheritedVel = modelState.inheritedVelocity;
+                snapshot.InheritedVelocityX = inheritedVel.x;
+                snapshot.InheritedVelocityY = inheritedVel.y;
+                snapshot.InheritedVelocityZ = inheritedVel.z;
+
+                snapshot.EyesViewMode = (player.playerFlags & BasePlayer.PlayerFlags.EyesViewmode) != 0;
+                snapshot.ThirdPersonViewMode = (player.playerFlags & BasePlayer.PlayerFlags.ThirdPersonViewmode) != 0;
+
+                snapshot.ActiveItemId = player.GetActiveItem()?.uid.Value ?? 0;
+                var parent = player.GetParentEntity();
+                snapshot.ParentId = parent?.net?.ID.Value ?? 0;
+
+                AntiCheatSnapshotProcessor.Enqueue(steamId, snapshot);
+                count++;
+            }
+            catch
+            {
+                skipped++;
+            }
+
+            if (count > 0 && count % 50 == 0)
+                yield return null;
+        }
+
+        var logCount = count;
+        var logSkipped = skipped;
+        Log.Debug(() => $"Initial player baseline complete: {logCount} players, {logSkipped} skipped");
     }
 
     private static void StartReceiveLoop()
@@ -869,113 +954,55 @@ public static class ThoriumClientService
         _receiveCoroutine = ThoriumUnityScheduler.RunCoroutine(ReceiveLoopRoutine());
     }
 
-    private static IEnumerator SendTextRoutine(string message, TaskCompletionSource<bool> tcs)
+    private static IEnumerator SendLoopRoutine()
     {
-        return SendRoutine(Encoding.UTF8.GetBytes(message), WebSocketMessageType.Text, tcs);
-    }
-
-    private static IEnumerator SendBinaryRoutine(byte[] data, TaskCompletionSource<bool> tcs)
-    {
-        return SendRoutine(data, WebSocketMessageType.Binary, tcs);
-    }
-
-    private static IEnumerator SendRoutine(byte[] data, WebSocketMessageType messageType,
-        TaskCompletionSource<bool> tcs)
-    {
-        while (_isSending)
-            yield return null;
-
-        _isSending = true;
-
-        Task? sendTask = null;
-        Exception? sendEx = null;
-
-        try
+        while (IsConnected)
         {
-            if (_webSocket == null)
-                throw new InvalidOperationException("WebSocket is not initialized");
-
-            sendTask = _webSocket.SendAsync(new ArraySegment<byte>(data), messageType, true,
-                CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            sendEx = ex;
-        }
-
-        if (sendEx != null || sendTask == null)
-        {
-            _isSending = false;
-            Log.Error($"Failed to send {messageType}: {sendEx?.Message ?? "Unknown error"}");
-            HandleConnectionError();
-            tcs.TrySetException(sendEx ?? new InvalidOperationException("Send failed"));
-            yield break;
-        }
-
-        while (!sendTask.IsCompleted)
-            yield return null;
-
-        _isSending = false;
-
-        if (sendTask.IsFaulted)
-        {
-            var ex = sendTask.Exception?.GetBaseException() ?? new InvalidOperationException("Send failed");
-            Log.Error($"Failed to send {messageType}: {ex.Message}");
-            HandleConnectionError();
-            tcs.TrySetException(ex);
-            yield break;
-        }
-
-        tcs.TrySetResult(true);
-    }
-
-    private static IEnumerator FlushPendingMessagesRoutine()
-    {
-        try
-        {
-            while (IsConnected && (_pendingMessages.Count > 0 || _pendingBinaryMessages.Count > 0))
+            if (_sendQueue.Count == 0)
             {
-                if (_pendingMessages.Count > 0)
-                {
-                    var json = _pendingMessages.Dequeue();
-
-                    var tcs = new TaskCompletionSource<bool>();
-                    ThoriumUnityScheduler.RunCoroutine(SendTextRoutine(json, tcs));
-                    while (!tcs.Task.IsCompleted)
-                        yield return null;
-
-                    if (tcs.Task.IsFaulted)
-                    {
-                        Log.Debug(() => "Failed to flush queued text, re-queueing");
-                        EnqueueTextWithLimit(json);
-                        yield break;
-                    }
-                }
-
-                if (_pendingBinaryMessages.Count > 0)
-                {
-                    var data = _pendingBinaryMessages.Dequeue();
-
-                    var tcs = new TaskCompletionSource<bool>();
-                    ThoriumUnityScheduler.RunCoroutine(SendBinaryRoutine(data, tcs));
-                    while (!tcs.Task.IsCompleted)
-                        yield return null;
-
-                    if (tcs.Task.IsFaulted)
-                    {
-                        Log.Debug(() => "Failed to flush queued binary, re-queueing");
-                        _pendingBinaryMessages.Enqueue(data);
-                        yield break;
-                    }
-                }
-
                 yield return null;
+                continue;
             }
+
+            var item = _sendQueue.Dequeue();
+
+            Task? sendTask = null;
+            try
+            {
+                sendTask = _webSocket?.SendAsync(
+                    new ArraySegment<byte>(item.Data), item.Type, true, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                Log.Debug(() => $"Send error: {ex.Message}");
+                item.Tcs?.TrySetException(ex);
+                HandleConnectionError();
+                yield break;
+            }
+
+            if (sendTask == null)
+            {
+                item.Tcs?.TrySetException(new InvalidOperationException("WebSocket not available"));
+                HandleConnectionError();
+                yield break;
+            }
+
+            while (!sendTask.IsCompleted)
+                yield return null;
+
+            if (sendTask.IsFaulted)
+            {
+                var ex = sendTask.Exception?.GetBaseException() ?? new InvalidOperationException("Send failed");
+                Log.Debug(() => $"Send failed: {ex.Message}");
+                item.Tcs?.TrySetException(ex);
+                HandleConnectionError();
+                yield break;
+            }
+
+            item.Tcs?.TrySetResult(true);
         }
-        finally
-        {
-            _isFlushingPending = false;
-        }
+
+        _sendLoopCoroutine = null;
     }
 
     private static IEnumerator ReceiveLoopRoutine()
@@ -1057,6 +1084,7 @@ public static class ThoriumClientService
         _isConnected = false;
         _isConnecting = false;
 
+        StopSendLoop();
         ThoriumUnityScheduler.TryStopCoroutine(ref _receiveCoroutine);
 
         // Close the WebSocket gracefully so the Gateway doesn't get an unexpected EOF
@@ -1126,6 +1154,7 @@ public static class ThoriumClientService
         _isConnected = false;
         _isConnecting = false;
 
+        StopSendLoop();
         ThoriumUnityScheduler.TryStopCoroutine(ref _receiveCoroutine);
         ThoriumUnityScheduler.TryStopCoroutine(ref _reconnectCoroutine);
 
@@ -1157,20 +1186,6 @@ public static class ThoriumClientService
         OnDisconnected?.Invoke();
         DisposeWebSocket();
         tcs.TrySetResult(true);
-    }
-
-    private static void EnqueueTextWithLimit(string json)
-    {
-        while (_pendingMessages.Count >= MAX_PENDING_TEXT_MESSAGES)
-            _pendingMessages.Dequeue();
-        _pendingMessages.Enqueue(json);
-    }
-
-    private static void EnqueueBinaryWithLimit(byte[] data)
-    {
-        while (_pendingBinaryMessages.Count >= MAX_PENDING_BINARY_MESSAGES)
-            _pendingBinaryMessages.Dequeue();
-        _pendingBinaryMessages.Enqueue(data);
     }
 
     private static void DisposeWebSocket()
