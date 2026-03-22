@@ -14,5 +14,6 @@ public enum SnapshotTypeEnums
     StashExposed,
     StashBuried,
     StashOpened,
-    StashBuiltOver
+    StashBuiltOver,
+    Baseline
 }
