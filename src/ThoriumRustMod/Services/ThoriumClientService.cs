@@ -951,7 +951,7 @@ public static class ThoriumClientService
 
             try
             {
-                var steamId = (long)player.userID;
+                var steamId = (long)player.userID._value;
                 if (steamId <= 0) { skipped++; continue; }
 
                 var pos = player.transform.position;
