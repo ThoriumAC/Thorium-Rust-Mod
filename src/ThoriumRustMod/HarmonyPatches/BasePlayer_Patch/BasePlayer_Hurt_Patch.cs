@@ -132,6 +132,8 @@ internal static class BasePlayer_Hurt_Patch
 
                 try
                 {
+                    PlayerServerStatsTracker.RecordHit(initiatorId, weaponShortname, info.isHeadshot, PlayerSnapshot.GetUnixTimestampMsCached());
+
                     var pos = __instance.transform.position;
                     var snapshot = PlayerSnapshot.Create(pos, __instance, SnapshotTypeEnums.Hurt,
                         CombatData.FromPlayer(initiator), __instance.estimatedVelocity, __instance.IsOnGround());

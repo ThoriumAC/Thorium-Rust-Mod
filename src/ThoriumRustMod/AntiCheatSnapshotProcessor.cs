@@ -165,12 +165,14 @@ public static class AntiCheatSnapshotProcessor
                 return;
 
             var caches = ThoriumEventPayload.TryDrainAndReset();
+            var playerStats = PlayerServerStatsTracker.CollectDirtyStats(PlayerSnapshot.GetUnixTimestampMsCached());
 
-            if (_batchSnapshots.Count == 0 && caches == null)
+            if (_batchSnapshots.Count == 0 && caches == null && playerStats.Count == 0)
                 return;
 
             var batch = Pool.Get<ThoriumBatch>();
             batch.Snapshots.AddRange(_batchSnapshots);
+            batch.PlayerServerStats.AddRange(playerStats);
 
             var payload = ThoriumBatchProtobufSerializer.Serialize(batch, caches);
 

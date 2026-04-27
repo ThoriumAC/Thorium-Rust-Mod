@@ -58,6 +58,11 @@ internal static class BasePlayer_Die_Patch
             BinaryEventWriter.WriteInt32(KillEventBuffer, projectileId);
             BinaryEventWriter.WriteBool(KillEventBuffer, info.isHeadshot);
 
+            var timestampMs = PlayerSnapshot.GetUnixTimestampMsCached();
+            PlayerServerStatsTracker.RecordPlayerDeath(unchecked((long)victimId), timestampMs);
+            if (initiator != __instance)
+                PlayerServerStatsTracker.RecordPlayerKill(unchecked((long)initiatorId), weaponShort, distance, timestampMs);
+
             try
             {
                 var steamId = unchecked((long)victimId);

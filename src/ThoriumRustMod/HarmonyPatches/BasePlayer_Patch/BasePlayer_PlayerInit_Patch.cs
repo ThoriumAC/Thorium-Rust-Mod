@@ -29,6 +29,8 @@ internal static class BasePlayer_PlayerInit_Patch
             var steamId = Helpers.GetSteamIdOrZero(__instance);
             if (steamId == 0) return;
 
+            PlayerServerStatsTracker.RegisterSessionStart(__instance, steamId, PlayerSnapshot.GetUnixTimestampMsCached());
+
             var pos = __instance.transform.position;
             var combat = CombatData.Get();
             combat.Weapon = ip;
