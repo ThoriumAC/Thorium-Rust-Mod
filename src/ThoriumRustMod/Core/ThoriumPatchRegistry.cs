@@ -3,11 +3,15 @@ using System.Reflection;
 using Facepunch.Rust;
 using HarmonyLib;
 using Network;
+using ThoriumRustMod.HarmonyPatches.BaseLauncher_Patch;
+using ThoriumRustMod.HarmonyPatches.BaseCombatEntity_Patch;
 using ThoriumRustMod.HarmonyPatches._OnRpcMessage_Patch;
 using ThoriumRustMod.HarmonyPatches.Analytics_Patch;
 using ThoriumRustMod.HarmonyPatches.BaseNetworkable_Patch;
 using ThoriumRustMod.HarmonyPatches.BasePlayer_Patch;
+using ThoriumRustMod.HarmonyPatches.BaseProjectile_Patch;
 using ThoriumRustMod.HarmonyPatches.ServerMgr_Patch;
+using ThoriumRustMod.HarmonyPatches.ThrownWeapon_Patch;
 
 namespace ThoriumRustMod.Core;
 
@@ -21,6 +25,8 @@ internal static class ThoriumPatchRegistry
     {
         _harmony = harmony;
         LastFailedPatch = null;
+        var rpcMessageType = AccessTools.TypeByName("RPCMessage");
+        var giveItemReasonType = AccessTools.TypeByName("GiveItemReason");
 
         return
             Apply("ServerMgr.OnRPCMessage",
@@ -40,6 +46,10 @@ internal static class ThoriumPatchRegistry
                     new[] { typeof(BaseNetworkable.DestroyMode), typeof(bool) }),
                 prefix: new HarmonyMethod(typeof(PatchBaseNetworkableKill), "Prefix")) &&
 
+            Apply("BaseCombatEntity.Die",
+                () => AccessTools.Method(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Die), new[] { typeof(HitInfo) }),
+                prefix: new HarmonyMethod(typeof(BaseCombatEntity_Die_Patch), "Prefix")) &&
+
             Apply("BasePlayer.Die",
                 () => AccessTools.Method(typeof(BasePlayer), nameof(BasePlayer.Die), new[] { typeof(HitInfo) }),
                 prefix: new HarmonyMethod(typeof(BasePlayer_Die_Patch), "Prefix")) &&
@@ -47,6 +57,23 @@ internal static class ThoriumPatchRegistry
             Apply("BasePlayer.Hurt",
                 () => AccessTools.Method(typeof(BasePlayer), nameof(BasePlayer.Hurt), new[] { typeof(HitInfo) }),
                 prefix: new HarmonyMethod(typeof(BasePlayer_Hurt_Patch), "Prefix")) &&
+
+            Apply("BasePlayer.GiveItem",
+                () => giveItemReasonType == null ? null : AccessTools.Method(typeof(BasePlayer), nameof(BasePlayer.GiveItem),
+                    new[] { typeof(Item), giveItemReasonType }),
+                prefix: new HarmonyMethod(typeof(BasePlayer_GiveItem_Patch), "Prefix")) &&
+
+            Apply("BaseProjectile.CLProject",
+                () => rpcMessageType == null ? null : AccessTools.Method(typeof(BaseProjectile), "CLProject", new[] { rpcMessageType }),
+                prefix: new HarmonyMethod(typeof(BaseProjectile_CLProject_Patch), "Prefix")) &&
+
+            Apply("BaseLauncher.SV_Launch",
+                () => rpcMessageType == null ? null : AccessTools.Method(typeof(BaseLauncher), "SV_Launch", new[] { rpcMessageType }),
+                prefix: new HarmonyMethod(typeof(BaseLauncher_SV_Launch_Patch), "Prefix")) &&
+
+            Apply("ThrownWeapon.DoThrow",
+                () => rpcMessageType == null ? null : AccessTools.Method(typeof(ThrownWeapon), "DoThrow", new[] { rpcMessageType }),
+                prefix: new HarmonyMethod(typeof(ThrownWeapon_DoThrow_Patch), "Prefix")) &&
 
             Apply("BasePlayer.OnDisconnected",
                 () => AccessTools.Method(typeof(BasePlayer), nameof(BasePlayer.OnDisconnected)),

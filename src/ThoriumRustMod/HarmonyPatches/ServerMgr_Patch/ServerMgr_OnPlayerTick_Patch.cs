@@ -40,6 +40,8 @@ internal static class ServerMgr_OnPlayerTick_Patch
             var snapshot = PlayerSnapshot.Create(pos, player, SnapshotTypeEnums.PlayerTick,
                 CombatData.FromPlayer(player), velocity, player.IsOnGround(), inputState);
 
+            PlayerServerStatsTracker.RecordTick(player, steamId, snapshot.CombatData, snapshot.TickTimestampUnixMs);
+
             snapshot.EyesViewMode = (flags & BasePlayer.PlayerFlags.EyesViewmode) != 0;
             snapshot.ThirdPersonViewMode = (flags & BasePlayer.PlayerFlags.ThirdPersonViewmode) != 0;
             snapshot.ViewAnglesX = viewAngles.x;
