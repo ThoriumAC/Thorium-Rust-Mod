@@ -26,7 +26,6 @@ internal static class ThoriumPatchRegistry
         _harmony = harmony;
         LastFailedPatch = null;
         var rpcMessageType = AccessTools.TypeByName("RPCMessage");
-        var giveItemReasonType = AccessTools.TypeByName("GiveItemReason");
 
         return
             Apply("ServerMgr.OnRPCMessage",
@@ -59,21 +58,24 @@ internal static class ThoriumPatchRegistry
                 prefix: new HarmonyMethod(typeof(BasePlayer_Hurt_Patch), "Prefix")) &&
 
             Apply("BasePlayer.GiveItem",
-                () => giveItemReasonType == null ? null : AccessTools.Method(typeof(BasePlayer), nameof(BasePlayer.GiveItem),
-                    new[] { typeof(Item), giveItemReasonType }),
-                prefix: new HarmonyMethod(typeof(BasePlayer_GiveItem_Patch), "Prefix")) &&
+                FindBasePlayerGiveItemMethod,
+                prefix: new HarmonyMethod(typeof(BasePlayer_GiveItem_Patch), "Prefix"),
+                required: false) &&
 
             Apply("BaseProjectile.CLProject",
                 () => rpcMessageType == null ? null : AccessTools.Method(typeof(BaseProjectile), "CLProject", new[] { rpcMessageType }),
-                prefix: new HarmonyMethod(typeof(BaseProjectile_CLProject_Patch), "Prefix")) &&
+                prefix: new HarmonyMethod(typeof(BaseProjectile_CLProject_Patch), "Prefix"),
+                required: false) &&
 
             Apply("BaseLauncher.SV_Launch",
                 () => rpcMessageType == null ? null : AccessTools.Method(typeof(BaseLauncher), "SV_Launch", new[] { rpcMessageType }),
-                prefix: new HarmonyMethod(typeof(BaseLauncher_SV_Launch_Patch), "Prefix")) &&
+                prefix: new HarmonyMethod(typeof(BaseLauncher_SV_Launch_Patch), "Prefix"),
+                required: false) &&
 
             Apply("ThrownWeapon.DoThrow",
                 () => rpcMessageType == null ? null : AccessTools.Method(typeof(ThrownWeapon), "DoThrow", new[] { rpcMessageType }),
-                prefix: new HarmonyMethod(typeof(ThrownWeapon_DoThrow_Patch), "Prefix")) &&
+                prefix: new HarmonyMethod(typeof(ThrownWeapon_DoThrow_Patch), "Prefix"),
+                required: false) &&
 
             Apply("BasePlayer.OnDisconnected",
                 () => AccessTools.Method(typeof(BasePlayer), nameof(BasePlayer.OnDisconnected)),
@@ -99,7 +101,7 @@ internal static class ThoriumPatchRegistry
     }
 
     private static bool Apply(string name, Func<MethodInfo?> getOriginal,
-        HarmonyMethod? prefix = null, HarmonyMethod? postfix = null)
+        HarmonyMethod? prefix = null, HarmonyMethod? postfix = null, bool required = true)
     {
         try
         {
@@ -113,9 +115,34 @@ internal static class ThoriumPatchRegistry
         }
         catch (Exception ex)
         {
+            if (!required)
+            {
+                Log.Warning($"[PatchRegistry] Skipping optional patch {name}: {ex.Message}");
+                return true;
+            }
+
             LastFailedPatch = name;
             Log.Error($"[PatchRegistry] Failed to patch {name}: {ex.Message}");
             return false;
         }
+    }
+
+    private static MethodInfo? FindBasePlayerGiveItemMethod()
+    {
+        foreach (var method in typeof(BasePlayer).GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+        {
+            if (!string.Equals(method.Name, nameof(BasePlayer.GiveItem), StringComparison.Ordinal))
+                continue;
+
+            var parameters = method.GetParameters();
+            if (parameters.Length < 2 || parameters[0].ParameterType != typeof(Item))
+                continue;
+
+            var reasonType = parameters[1].ParameterType;
+            if (reasonType.IsEnum || reasonType.Name.Contains("GiveItemReason", StringComparison.Ordinal))
+                return method;
+        }
+
+        return null;
     }
 }
