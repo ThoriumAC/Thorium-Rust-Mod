@@ -257,6 +257,7 @@ public class ThoriumLoader : IHarmonyModHooks
 
         try { ThoriumClientService.Reset(); } catch { }
         try { AntiCheatSnapshotProcessor.Reset(); } catch { }
+        try { PlayerServerStatsTracker.Reset(); } catch { }
         ConsoleCommands.Reset();
         try { DataHandler.Reset(); } catch { }
         ThoriumConfigService.Reset();

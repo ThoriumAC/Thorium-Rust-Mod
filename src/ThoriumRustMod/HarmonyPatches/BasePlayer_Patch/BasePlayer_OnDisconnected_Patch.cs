@@ -25,6 +25,8 @@ internal static class BasePlayer_OnDisconnected_Patch
             var steamId = Helpers.GetSteamIdOrZero(__instance);
             if (steamId == 0) return;
 
+            PlayerServerStatsTracker.RegisterSessionEnd(__instance, steamId, PlayerSnapshot.GetUnixTimestampMsCached());
+
             var pos = __instance.transform.position;
             var combat = CombatData.Get();
             combat.Weapon = null;
