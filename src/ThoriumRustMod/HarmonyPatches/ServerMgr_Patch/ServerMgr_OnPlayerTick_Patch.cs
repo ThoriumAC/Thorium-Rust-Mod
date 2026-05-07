@@ -31,7 +31,7 @@ internal static class ServerMgr_OnPlayerTick_Patch
 
             var inputState = playerTick.inputState;
             var modelState = playerTick.modelState;
-            var pos = player.tickInterpolator.EndPoint;
+            var pos = player.ServerPosition;
             var eyePos = playerTick.eyePos;
             var velocity = player.estimatedVelocity;
             var viewAngles = player.viewAngles;
