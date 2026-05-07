@@ -1,5 +1,6 @@
 using Facepunch.Rust;
 using HarmonyLib;
+using ThoriumRustMod.Models;
 using ThoriumRustMod.Services;
 using UnityEngine;
 
@@ -15,6 +16,8 @@ public class Azure_OnEntityBuilt_Patch
             if (!DataHandler.IsConfigured) return;
             if (entity == null || entity.net == null || player == null) return;
             if (DataHandler.EntityEventBuffer.Length > DataHandler.MaxCacheSize) return;
+
+            PlayerServerStatsTracker.RecordEntityPlaced(player, entity, PlayerSnapshot.GetUnixTimestampMsCached());
 
             DataHandler.EntityEventCount++;
             var cache = DataHandler.EntityEventBuffer;

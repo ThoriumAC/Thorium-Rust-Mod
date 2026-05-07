@@ -43,6 +43,7 @@ public class PlayerSnapshot : Pool.IPooled
         }
 
         snapshot.TeamId = player.currentTeam;
+        snapshot.NetworkGroupId = player.net?.group?.ID ?? 0;
         snapshot.SnapshotType = type;
         snapshot.CombatData = combatData;
         snapshot.IsGrounded = isGrounded;
@@ -87,6 +88,7 @@ public class PlayerSnapshot : Pool.IPooled
         }
 
         snapshot.OnLadder = player.OnLadder();
+        snapshot.AdminCheat = player.GetComponent<BaseMovement>()?.adminCheat == true;
 
         snapshot.AverageLatency = Net.sv.GetAveragePing(player.net.connection);
         snapshot.PacketLoss = (long)Net.sv.GetStat(player.net.connection, BaseNetwork.StatTypeLong.PacketLossLastSecond);
@@ -182,6 +184,8 @@ public class PlayerSnapshot : Pool.IPooled
     public bool IsDead { get; set; }
 
     public bool OnLadder { get; set; }
+    
+    public bool AdminCheat { get; set; }
 
     public float AverageLatency { get; set; }
 
@@ -214,6 +218,7 @@ public class PlayerSnapshot : Pool.IPooled
                 SnapshotTypeEnums.StashBuried => "stash_buried",
                 SnapshotTypeEnums.StashOpened => "stash_opened",
                 SnapshotTypeEnums.StashBuiltOver => "stash_built_over",
+                SnapshotTypeEnums.Baseline => "baseline",
                 _ => "unknown",
             };
         }
@@ -244,6 +249,8 @@ public class PlayerSnapshot : Pool.IPooled
     public float AimPitch { get; set; }
 
     public ulong TeamId { get; set; }
+
+    public uint NetworkGroupId { get; set; }
 
     public CombatData? CombatData { get; set; }
 
@@ -343,6 +350,7 @@ public class PlayerSnapshot : Pool.IPooled
         EyesPositionX = 0f; EyesPositionY = 0f; EyesPositionZ = 0f;
         IsDead = false;
         OnLadder = false;
+        AdminCheat = false;
         AverageLatency = 0f;
         PacketLoss = 0;
         SnapshotType = SnapshotTypeEnums.Unknown;
@@ -350,6 +358,7 @@ public class PlayerSnapshot : Pool.IPooled
         InputButtons = 0;
         AimYaw = 0f; AimPitch = 0f;
         TeamId = 0;
+        NetworkGroupId = 0;
         ActiveItemId = 0;
         ParentId = 0;
         DeltaMs = 0;

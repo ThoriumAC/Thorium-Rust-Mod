@@ -36,6 +36,7 @@ internal static class ThoriumBatchProtobufSerializer
         //   int64 total_damage_packets = 16;
         //   bytes entity_cache = 17;
         //   int64 total_entity_packets = 18;
+        //   repeated PlayerServerStats player_server_stats = 19;
         // }
 
         if (batch.StartTick != 0)
@@ -71,6 +72,12 @@ internal static class ThoriumBatchProtobufSerializer
 
             WriteOptionalBytes(w, 17, caches.EntityEventBytes, caches.EntityEventLength);
             WriteOptionalInt64(w, 18, caches.EntityEventCount);
+        }
+
+        foreach (var playerStats in batch.PlayerServerStats)
+        {
+            if (playerStats == null) continue;
+            w.WriteEmbeddedMessage(19, playerStats, static (inner, stats) => WritePlayerServerStats(inner, stats));
         }
     }
 
@@ -150,6 +157,8 @@ internal static class ThoriumBatchProtobufSerializer
         //   float water_factor = 49;
         //   bool is_swimming = 50;
         //   bool is_diving = 51;
+        //   bool admin_cheat = 52;
+        //   uint32 network_group_id = 53;
         // }
         
         if (s.Tick != 0)
@@ -198,6 +207,12 @@ internal static class ThoriumBatchProtobufSerializer
         {
             w.WriteTag(17, ProtobufWireType.Varint);
             w.WriteUInt64(s.TeamId);
+        }
+
+        if (s.NetworkGroupId != 0)
+        {
+            w.WriteTag(53, ProtobufWireType.Varint);
+            w.WriteUInt32(s.NetworkGroupId);
         }
 
         if (s.CombatData != null && (s.CombatData.IsAiming || s.CombatData.IsAttacking || s.CombatData.IsMounted ||
@@ -345,6 +360,12 @@ internal static class ThoriumBatchProtobufSerializer
             w.WriteTag(51, ProtobufWireType.Varint);
             w.WriteBool(true);
         }
+
+        if (s.AdminCheat)
+        {
+            w.WriteTag(52, ProtobufWireType.Varint);
+            w.WriteBool(true);
+        }
     }
 
     private static void WriteCombatData(ProtobufWireWriter w, CombatData c)
@@ -394,6 +415,149 @@ internal static class ThoriumBatchProtobufSerializer
         {
             w.WriteTag(7, ProtobufWireType.LengthDelimited);
             w.WriteString(c.Weapon);
+        }
+    }
+
+    private static void WritePlayerServerStats(ProtobufWireWriter w, PlayerServerStats stats)
+    {
+        if (stats.SteamId != 0)
+        {
+            w.WriteTag(1, ProtobufWireType.Varint);
+            w.WriteInt64(stats.SteamId);
+        }
+
+        if (!string.IsNullOrEmpty(stats.DisplayName))
+        {
+            w.WriteTag(2, ProtobufWireType.LengthDelimited);
+            w.WriteString(stats.DisplayName);
+        }
+
+        if (stats.TotalPlaytimeSeconds != 0)
+        {
+            w.WriteTag(3, ProtobufWireType.Varint);
+            w.WriteInt64(stats.TotalPlaytimeSeconds);
+        }
+
+        if (stats.SessionCount != 0)
+        {
+            w.WriteTag(4, ProtobufWireType.Varint);
+            w.WriteInt32(stats.SessionCount);
+        }
+
+        if (stats.BulletsFired != 0)
+        {
+            w.WriteTag(5, ProtobufWireType.Varint);
+            w.WriteInt32(stats.BulletsFired);
+        }
+
+        if (stats.ShotsHit != 0)
+        {
+            w.WriteTag(6, ProtobufWireType.Varint);
+            w.WriteInt32(stats.ShotsHit);
+        }
+
+        if (stats.Headshots != 0)
+        {
+            w.WriteTag(7, ProtobufWireType.Varint);
+            w.WriteInt32(stats.Headshots);
+        }
+
+        if (stats.PlayerKills != 0)
+        {
+            w.WriteTag(8, ProtobufWireType.Varint);
+            w.WriteInt32(stats.PlayerKills);
+        }
+
+        if (stats.PlayerDeaths != 0)
+        {
+            w.WriteTag(9, ProtobufWireType.Varint);
+            w.WriteInt32(stats.PlayerDeaths);
+        }
+
+        if (!string.IsNullOrEmpty(stats.PreferredWeapon))
+        {
+            w.WriteTag(10, ProtobufWireType.LengthDelimited);
+            w.WriteString(stats.PreferredWeapon);
+        }
+
+        WriteFloatIfNonZero(w, 11, stats.FurthestKillDistance);
+
+        if (stats.WoodGathered != 0)
+        {
+            w.WriteTag(12, ProtobufWireType.Varint);
+            w.WriteInt64(stats.WoodGathered);
+        }
+
+        if (stats.StoneGathered != 0)
+        {
+            w.WriteTag(13, ProtobufWireType.Varint);
+            w.WriteInt64(stats.StoneGathered);
+        }
+
+        if (stats.MetalGathered != 0)
+        {
+            w.WriteTag(14, ProtobufWireType.Varint);
+            w.WriteInt64(stats.MetalGathered);
+        }
+
+        if (stats.SulfurGathered != 0)
+        {
+            w.WriteTag(15, ProtobufWireType.Varint);
+            w.WriteInt64(stats.SulfurGathered);
+        }
+
+        if (stats.ScrapCollected != 0)
+        {
+            w.WriteTag(16, ProtobufWireType.Varint);
+            w.WriteInt64(stats.ScrapCollected);
+        }
+
+        if (stats.CropsPlanted != 0)
+        {
+            w.WriteTag(17, ProtobufWireType.Varint);
+            w.WriteInt32(stats.CropsPlanted);
+        }
+
+        if (stats.CropsHarvested != 0)
+        {
+            w.WriteTag(18, ProtobufWireType.Varint);
+            w.WriteInt32(stats.CropsHarvested);
+        }
+
+        if (stats.ExplosivesUsed != 0)
+        {
+            w.WriteTag(19, ProtobufWireType.Varint);
+            w.WriteInt32(stats.ExplosivesUsed);
+        }
+
+        if (stats.BuildingBlocksPlaced != 0)
+        {
+            w.WriteTag(20, ProtobufWireType.Varint);
+            w.WriteInt32(stats.BuildingBlocksPlaced);
+        }
+
+        if (stats.BuildingBlocksBroken != 0)
+        {
+            w.WriteTag(21, ProtobufWireType.Varint);
+            w.WriteInt32(stats.BuildingBlocksBroken);
+        }
+
+        if (stats.NpcsKilled != 0)
+        {
+            w.WriteTag(22, ProtobufWireType.Varint);
+            w.WriteInt32(stats.NpcsKilled);
+        }
+
+        if (stats.AnimalsKilled != 0)
+        {
+            w.WriteTag(23, ProtobufWireType.Varint);
+            w.WriteInt32(stats.AnimalsKilled);
+        }
+
+        if (stats.UpdatedAtUnixMs != 0)
+        {
+            w.WriteTag(24, ProtobufWireType.Varint);
+            w.WriteInt64(stats.UpdatedAtUnixMs);
         }
     }
 

@@ -3,11 +3,15 @@ using System.Reflection;
 using Facepunch.Rust;
 using HarmonyLib;
 using Network;
+using ThoriumRustMod.HarmonyPatches.BaseLauncher_Patch;
+using ThoriumRustMod.HarmonyPatches.BaseCombatEntity_Patch;
 using ThoriumRustMod.HarmonyPatches._OnRpcMessage_Patch;
 using ThoriumRustMod.HarmonyPatches.Analytics_Patch;
 using ThoriumRustMod.HarmonyPatches.BaseNetworkable_Patch;
 using ThoriumRustMod.HarmonyPatches.BasePlayer_Patch;
+using ThoriumRustMod.HarmonyPatches.BaseProjectile_Patch;
 using ThoriumRustMod.HarmonyPatches.ServerMgr_Patch;
+using ThoriumRustMod.HarmonyPatches.ThrownWeapon_Patch;
 
 namespace ThoriumRustMod.Core;
 
@@ -21,6 +25,7 @@ internal static class ThoriumPatchRegistry
     {
         _harmony = harmony;
         LastFailedPatch = null;
+        var rpcMessageType = AccessTools.TypeByName("RPCMessage");
 
         return
             Apply("ServerMgr.OnRPCMessage",
@@ -40,6 +45,10 @@ internal static class ThoriumPatchRegistry
                     new[] { typeof(BaseNetworkable.DestroyMode), typeof(bool) }),
                 prefix: new HarmonyMethod(typeof(PatchBaseNetworkableKill), "Prefix")) &&
 
+            Apply("BaseCombatEntity.Die",
+                () => AccessTools.Method(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Die), new[] { typeof(HitInfo) }),
+                prefix: new HarmonyMethod(typeof(BaseCombatEntity_Die_Patch), "Prefix")) &&
+
             Apply("BasePlayer.Die",
                 () => AccessTools.Method(typeof(BasePlayer), nameof(BasePlayer.Die), new[] { typeof(HitInfo) }),
                 prefix: new HarmonyMethod(typeof(BasePlayer_Die_Patch), "Prefix")) &&
@@ -47,6 +56,26 @@ internal static class ThoriumPatchRegistry
             Apply("BasePlayer.Hurt",
                 () => AccessTools.Method(typeof(BasePlayer), nameof(BasePlayer.Hurt), new[] { typeof(HitInfo) }),
                 prefix: new HarmonyMethod(typeof(BasePlayer_Hurt_Patch), "Prefix")) &&
+
+            Apply("BasePlayer.GiveItem",
+                FindBasePlayerGiveItemMethod,
+                prefix: new HarmonyMethod(typeof(BasePlayer_GiveItem_Patch), "Prefix"),
+                required: false) &&
+
+            Apply("BaseProjectile.CLProject",
+                () => rpcMessageType == null ? null : AccessTools.Method(typeof(BaseProjectile), "CLProject", new[] { rpcMessageType }),
+                prefix: new HarmonyMethod(typeof(BaseProjectile_CLProject_Patch), "Prefix"),
+                required: false) &&
+
+            Apply("BaseLauncher.SV_Launch",
+                () => rpcMessageType == null ? null : AccessTools.Method(typeof(BaseLauncher), "SV_Launch", new[] { rpcMessageType }),
+                prefix: new HarmonyMethod(typeof(BaseLauncher_SV_Launch_Patch), "Prefix"),
+                required: false) &&
+
+            Apply("ThrownWeapon.DoThrow",
+                () => rpcMessageType == null ? null : AccessTools.Method(typeof(ThrownWeapon), "DoThrow", new[] { rpcMessageType }),
+                prefix: new HarmonyMethod(typeof(ThrownWeapon_DoThrow_Patch), "Prefix"),
+                required: false) &&
 
             Apply("BasePlayer.OnDisconnected",
                 () => AccessTools.Method(typeof(BasePlayer), nameof(BasePlayer.OnDisconnected)),
@@ -72,7 +101,7 @@ internal static class ThoriumPatchRegistry
     }
 
     private static bool Apply(string name, Func<MethodInfo?> getOriginal,
-        HarmonyMethod? prefix = null, HarmonyMethod? postfix = null)
+        HarmonyMethod? prefix = null, HarmonyMethod? postfix = null, bool required = true)
     {
         try
         {
@@ -86,9 +115,34 @@ internal static class ThoriumPatchRegistry
         }
         catch (Exception ex)
         {
+            if (!required)
+            {
+                Log.Warning($"[PatchRegistry] Skipping optional patch {name}: {ex.Message}");
+                return true;
+            }
+
             LastFailedPatch = name;
             Log.Error($"[PatchRegistry] Failed to patch {name}: {ex.Message}");
             return false;
         }
+    }
+
+    private static MethodInfo? FindBasePlayerGiveItemMethod()
+    {
+        foreach (var method in typeof(BasePlayer).GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+        {
+            if (!string.Equals(method.Name, nameof(BasePlayer.GiveItem), StringComparison.Ordinal))
+                continue;
+
+            var parameters = method.GetParameters();
+            if (parameters.Length < 2 || parameters[0].ParameterType != typeof(Item))
+                continue;
+
+            var reasonType = parameters[1].ParameterType;
+            if (reasonType.IsEnum || reasonType.Name.Contains("GiveItemReason", StringComparison.Ordinal))
+                return method;
+        }
+
+        return null;
     }
 }
