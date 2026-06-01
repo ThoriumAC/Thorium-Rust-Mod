@@ -3,11 +3,12 @@ using System.Reflection;
 using Facepunch.Rust;
 using HarmonyLib;
 using Network;
+using ThoriumRustMod.HarmonyPatches.Analytics_Patch;
 using ThoriumRustMod.HarmonyPatches.BaseLauncher_Patch;
 using ThoriumRustMod.HarmonyPatches.BaseCombatEntity_Patch;
 using ThoriumRustMod.HarmonyPatches._OnRpcMessage_Patch;
-using ThoriumRustMod.HarmonyPatches.Analytics_Patch;
 using ThoriumRustMod.HarmonyPatches.BaseNetworkable_Patch;
+using ThoriumRustMod.HarmonyPatches.Planner_Patch;
 using ThoriumRustMod.HarmonyPatches.BasePlayer_Patch;
 using ThoriumRustMod.HarmonyPatches.BaseProjectile_Patch;
 using ThoriumRustMod.HarmonyPatches.ServerMgr_Patch;
@@ -32,18 +33,22 @@ internal static class ThoriumPatchRegistry
                 () => AccessTools.Method(typeof(ServerMgr), nameof(ServerMgr.OnRPCMessage), new[] { typeof(Message) }),
                 prefix: new HarmonyMethod(typeof(BaseNetworkable_OnRpcMessage_Patch), "Prefix")) &&
 
-            Apply("Analytics.Azure.OnEntityBuilt",
-                () => AccessTools.Method(typeof(Analytics.Azure), "OnEntityBuilt"),
-                prefix: new HarmonyMethod(typeof(Azure_OnEntityBuilt_Patch), "Prefix")) &&
-
-            Apply("Analytics.Azure.OnEntityDestroyed",
-                () => AccessTools.Method(typeof(Analytics.Azure), "OnEntityDestroyed"),
-                prefix: new HarmonyMethod(typeof(Azure_OnEntityDestroyed_Patch), "OnEntityDestroyed")) &&
-
             Apply("BaseNetworkable.Kill",
                 () => AccessTools.Method(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill),
                     new[] { typeof(BaseNetworkable.DestroyMode), typeof(bool) }),
                 prefix: new HarmonyMethod(typeof(PatchBaseNetworkableKill), "Prefix")) &&
+
+            Apply("BaseNetworkable.Kill.EntityEvent",
+                () => AccessTools.Method(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill),
+                    new[] { typeof(BaseNetworkable.DestroyMode), typeof(bool) }),
+                prefix: new HarmonyMethod(typeof(Azure_OnEntityDestroyed_Patch), "OnEntityDestroyed"),
+                required: false) &&
+
+            Apply("Planner.DoBuild",
+                () => AccessTools.Method(typeof(Planner), "DoBuild",
+                    new[] { typeof(Construction.Target), typeof(Construction) }),
+                postfix: new HarmonyMethod(typeof(Planner_DoBuild_Patch), "Postfix"),
+                required: false) &&
 
             Apply("BaseCombatEntity.Die",
                 () => AccessTools.Method(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Die), new[] { typeof(HitInfo) }),
@@ -85,13 +90,13 @@ internal static class ThoriumPatchRegistry
                 () => AccessTools.Method(typeof(BasePlayer), nameof(BasePlayer.PlayerInit)),
                 postfix: new HarmonyMethod(typeof(BasePlayer_PlayerInit_Patch), "Postfix")) &&
 
-            Apply("ServerMgr.OpenConnection",
-                () => AccessTools.Method(typeof(ServerMgr), nameof(ServerMgr.OpenConnection)),
+            Apply("ServerMgr.Initialize",
+                () => AccessTools.Method(typeof(ServerMgr), nameof(ServerMgr.Initialize)),
                 postfix: new HarmonyMethod(typeof(Patch_OpenConnection), "Postfix")) &&
 
-            Apply("ServerMgr.OnPlayerTick",
-                () => AccessTools.Method(typeof(ServerMgr), nameof(ServerMgr.OnPlayerTick), new[] { typeof(Message) }),
-                prefix: new HarmonyMethod(typeof(ServerMgr_OnPlayerTick_Patch), "Prefix"));
+            Apply("BasePlayer.OnReceiveTick",
+                () => AccessTools.Method(typeof(BasePlayer), "OnReceiveTick", new[] { typeof(PlayerTick), typeof(bool) }),
+                postfix: new HarmonyMethod(typeof(BasePlayer_OnReceiveTick_Patch), "Postfix"));
     }
 
     public static void UnpatchAll()

@@ -1,6 +1,5 @@
 using System.IO;
 using ThoriumRustMod.Config;
-using UnityEngine;
 
 namespace ThoriumRustMod.Services;
 
@@ -21,20 +20,11 @@ public static class DataHandler
     public static long EntityEventCount { get; set; }
 
     private static bool _isConfigured;
-    private static float _lastCheck;
 
     public static bool IsConfigured
     {
-        get
-        {
-            var now = Time.realtimeSinceStartup;
-            if (now - _lastCheck > 5f)
-            {
-                _isConfigured = ThoriumConfigService.HasValidToken;
-                _lastCheck = now;
-            }
-            return _isConfigured;
-        }
+        get => _isConfigured;
+        internal set => _isConfigured = value;
     }
 
     public static void Reset()
@@ -55,6 +45,5 @@ public static class DataHandler
         CombatEventCount = 0;
         EntityEventCount = 0;
         _isConfigured = false;
-        _lastCheck = 0f;
     }
 }

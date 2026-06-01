@@ -40,9 +40,8 @@ internal static class BasePlayer_Hurt_Patch
 
                         try
                         {
-                            var pos = __instance.transform.position;
                             AntiCheatSnapshotProcessor.Enqueue(victimId,
-                                PlayerSnapshot.Create(pos, __instance, SnapshotTypeEnums.HurtEnv,
+                                PlayerSnapshot.Create(__instance.ServerPosition, __instance, SnapshotTypeEnums.HurtEnv,
                                     CombatData.Get()));
                         }
                         catch
@@ -69,22 +68,20 @@ internal static class BasePlayer_Hurt_Patch
                 var initiatorId = Helpers.GetSteamIdOrZero(initiator);
                 if (initiatorId == 0L) return;
 
-                if (info.Weapon.GetItem() == null) return;
+                var weaponItem = info.Weapon.GetItem();
+                if (weaponItem == null) return;
                 if (DataHandler.CombatEventBuffer.Length > DataHandler.MaxCacheSize) return;
 
                 DataHandler.CombatEventCount++;
                 var CombatEventBuffer = DataHandler.CombatEventBuffer;
                 var itemid = 0;
-                string? weaponShortname = null;
+                string? weaponShortname = weaponItem.info.shortname;
                 var isProjectile = false;
                 string? boneName = null;
 
                 try
                 {
                     var weapon = info.Weapon;
-                    var weaponItem = weapon?.GetItem();
-                    if (weaponItem != null)
-                        weaponShortname = weaponItem.info.shortname;
 
                     var proj = weapon as BaseProjectile;
                     if (proj != null)
@@ -112,7 +109,7 @@ internal static class BasePlayer_Hurt_Patch
                 BinaryEventWriter.WriteSingle(CombatEventBuffer, info.damageTypes.Total());
                 BinaryEventWriter.WriteSingle(CombatEventBuffer, __instance.health);
                 BinaryEventWriter.WriteInt32(CombatEventBuffer, info.ProjectileID);
-                BinaryEventWriter.WriteSingle(CombatEventBuffer, initiator.Distance(__instance.transform.position));
+                BinaryEventWriter.WriteSingle(CombatEventBuffer, initiator.Distance(__instance.ServerPosition));
                 BinaryEventWriter.WriteString(CombatEventBuffer, weaponShortname);
                 BinaryEventWriter.WriteBool(CombatEventBuffer, isProjectile);
                 BinaryEventWriter.WriteBool(CombatEventBuffer, info.isHeadshot);
@@ -134,8 +131,7 @@ internal static class BasePlayer_Hurt_Patch
                 {
                     PlayerServerStatsTracker.RecordHit(initiatorId, weaponShortname, info.isHeadshot, PlayerSnapshot.GetUnixTimestampMsCached());
 
-                    var pos = __instance.transform.position;
-                    var snapshot = PlayerSnapshot.Create(pos, __instance, SnapshotTypeEnums.Hurt,
+                    var snapshot = PlayerSnapshot.Create(__instance.ServerPosition, __instance, SnapshotTypeEnums.Hurt,
                         CombatData.FromPlayer(initiator), __instance.estimatedVelocity, __instance.IsOnGround());
 
                     AntiCheatSnapshotProcessor.Enqueue(victimId, snapshot);
