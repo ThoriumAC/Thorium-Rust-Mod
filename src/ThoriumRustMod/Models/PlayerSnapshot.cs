@@ -1,6 +1,7 @@
 using System;
 using Facepunch;
 using Network;
+using ThoriumRustMod.Services;
 using UnityEngine;
 
 namespace ThoriumRustMod.Models;
@@ -21,7 +22,7 @@ public class PlayerSnapshot : Pool.IPooled
     {
         var snapshot = AntiCheatSnapshotProcessor.GetPooledSnapshot();
 
-        snapshot.Tick = System.Threading.Interlocked.Increment(ref _globalTickCounter);
+        snapshot.Tick = ++_globalTickCounter;
         snapshot.TickTimestampUnixMs = GetUnixTimestampMs();
         snapshot.TickIntervalMs = Time.deltaTime * 1000f;
 
@@ -88,11 +89,69 @@ public class PlayerSnapshot : Pool.IPooled
         }
 
         snapshot.OnLadder = player.OnLadder();
-        snapshot.AdminCheat = player.GetComponent<BaseMovement>()?.adminCheat == true;
+        var userId = (long)player.userID._value;
+        snapshot.AdminCheat = PerPlayerCache.GetAdminCheat(userId);
 
-        snapshot.AverageLatency = Net.sv.GetAveragePing(player.net.connection);
-        snapshot.PacketLoss = (long)Net.sv.GetStat(player.net.connection, BaseNetwork.StatTypeLong.PacketLossLastSecond);
-        
+        var (ping, packetLoss) = PerPlayerCache.GetNetStats(player, userId);
+        snapshot.AverageLatency = ping;
+        snapshot.PacketLoss = packetLoss;
+
+        return snapshot;
+    }
+
+    public static PlayerSnapshot CreateFromTick(
+        Vector3 position, BasePlayer player, long steamId,
+        in BasePlayer.CachedState cached,
+        CombatData? combatData, Vector3 velocity, InputMessage? inputMessage,
+        Vector3 viewAngles)
+    {
+        var snapshot = AntiCheatSnapshotProcessor.GetPooledSnapshot();
+
+        snapshot.Tick = ++_globalTickCounter;
+        snapshot.TickTimestampUnixMs = GetUnixTimestampMs();
+        snapshot.TickIntervalMs = Time.deltaTime * 1000f;
+
+        snapshot.PosX = position.x;
+        snapshot.PosY = position.y;
+        snapshot.PosZ = position.z;
+
+        snapshot.AimYaw = viewAngles.y;
+        snapshot.AimPitch = viewAngles.x;
+
+        snapshot.TeamId = player.currentTeam;
+        snapshot.NetworkGroupId = player.net?.group?.ID ?? 0;
+        snapshot.SnapshotType = SnapshotTypeEnums.PlayerTick;
+        snapshot.CombatData = combatData;
+        snapshot.IsGrounded = cached.IsOnGround;
+        snapshot.ModelState = player.modelState.flags;
+        snapshot.PlayerFlags = (int)cached.PlayerFlags;
+
+        if (inputMessage != null)
+        {
+            snapshot.MouseDX = inputMessage.mouseDelta.x;
+            snapshot.MouseDY = inputMessage.mouseDelta.y;
+            snapshot.MouseDZ = inputMessage.mouseDelta.z;
+            snapshot.InputButtons = inputMessage.buttons;
+        }
+
+        snapshot.VelX = velocity.x;
+        snapshot.VelY = velocity.y;
+        snapshot.VelZ = velocity.z;
+
+        snapshot.IsDead = player.IsDead();
+        snapshot.OnLadder = cached.IsOnLadder;
+        snapshot.IsRunning = cached.IsRunning;
+        snapshot.IsDucking = cached.IsDucking;
+        snapshot.IsCrawling = cached.IsCrawling;
+        snapshot.IsFlying = cached.IsFlying;
+        snapshot.MovementMultiplier = cached.ModifiersMovementMultiplier;
+
+        snapshot.AdminCheat = PerPlayerCache.GetAdminCheat(steamId);
+
+        var (ping, packetLoss) = PerPlayerCache.GetNetStats(player, steamId);
+        snapshot.AverageLatency = ping;
+        snapshot.PacketLoss = packetLoss;
+
         return snapshot;
     }
 
@@ -331,6 +390,21 @@ public class PlayerSnapshot : Pool.IPooled
     /// </summary>
     public bool IsDiving { get; set; }
 
+    public bool IsRunning { get; set; }
+    public bool IsDucking { get; set; }
+    public bool IsCrawling { get; set; }
+    public bool IsFlying { get; set; }
+
+    /// <summary>
+    /// Server-computed movement speed multiplier (modifiers + clothing). Use to contextualize velocity for anti-cheat.
+    /// </summary>
+    public float MovementMultiplier { get; set; }
+
+    /// <summary>
+    /// Client-reported model state flags. Compare against ModelState (server-validated) to detect flag manipulation cheats.
+    /// </summary>
+    public int ClientModelStateFlags { get; set; }
+
     public void EnterPool()
     {
         CombatData?.Return();
@@ -370,6 +444,12 @@ public class PlayerSnapshot : Pool.IPooled
         WaterFactor = 0f;
         IsSwimming = false;
         IsDiving = false;
+        IsRunning = false;
+        IsDucking = false;
+        IsCrawling = false;
+        IsFlying = false;
+        MovementMultiplier = 0f;
+        ClientModelStateFlags = 0;
     }
 
     public void LeavePool() { }

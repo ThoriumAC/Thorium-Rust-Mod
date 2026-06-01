@@ -34,6 +34,7 @@ internal static class BasePlayer_OnDisconnected_Patch
                 PlayerSnapshot.Create(pos, __instance, SnapshotTypeEnums.Leave, combat));
 
             AntiCheatSnapshotProcessor.CleanupPlayer(steamId);
+            PerPlayerCache.Unregister(steamId);
         }
         catch
         {

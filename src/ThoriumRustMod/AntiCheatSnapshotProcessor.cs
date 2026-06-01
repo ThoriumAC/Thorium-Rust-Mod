@@ -15,14 +15,13 @@ public static class AntiCheatSnapshotProcessor
     private const int FLUSH_INTERVAL_SECONDS = 1;
     private const int MAX_SNAPSHOTS_PER_PLAYER = 500;
 
-    private static readonly Dictionary<long, Queue<PlayerSnapshot>> _buffer = new(1200);
+    private static readonly Dictionary<long, List<PlayerSnapshot>> _buffer = new(1200);
     private static readonly List<long> _keysToRemove = new(1200);
+    private static readonly List<long> _activeKeys = new(1200);
     private static readonly List<AntiCheatSnapshot> _batchSnapshots = new(1200);
 
     private static bool _isRunning;
     private static Coroutine? _workerCoroutine;
-    private static bool _isConfigured;
-    private static float _lastConfigCheck;
     private static readonly WaitForSecondsRealtime _flushWait = new WaitForSecondsRealtime(FLUSH_INTERVAL_SECONDS);
 
     public static int BufferCount => _buffer.Count;
@@ -43,40 +42,32 @@ public static class AntiCheatSnapshotProcessor
     {
         if (steamId <= 0 || snapshot == null) return;
 
-        var now = Time.realtimeSinceStartup;
-        if (now - _lastConfigCheck > 5f)
-        {
-            _isConfigured = ThoriumConfigService.HasValidToken;
-            _lastConfigCheck = now;
-        }
-
-        if (!_isConfigured)
+        if (!DataHandler.IsConfigured)
         {
             ReturnSnapshotToPool(snapshot);
             return;
         }
 
-        if (!_buffer.TryGetValue(steamId, out var queue))
+        if (!_buffer.TryGetValue(steamId, out var list))
         {
-            queue = new Queue<PlayerSnapshot>(64);
-            _buffer[steamId] = queue;
+            list = new List<PlayerSnapshot>(64);
+            _buffer[steamId] = list;
         }
 
-        if (queue.Count >= MAX_SNAPSHOTS_PER_PLAYER)
+        if (list.Count >= MAX_SNAPSHOTS_PER_PLAYER)
         {
-            var removed = queue.Dequeue();
-            ReturnSnapshotToPool(removed);
+            ReturnSnapshotToPool(snapshot);
+            return;
         }
 
-        queue.Enqueue(snapshot);
+        list.Add(snapshot);
     }
 
     public static void StartWorker()
     {
         if (_isRunning) return;
         _isRunning = true;
-        _isConfigured = ThoriumConfigService.HasValidToken;
-        _lastConfigCheck = Time.realtimeSinceStartup;
+        DataHandler.IsConfigured = ThoriumConfigService.HasValidToken;
         _workerCoroutine = ThoriumUnityScheduler.RunCoroutine(WorkerRoutine());
     }
 
@@ -98,8 +89,8 @@ public static class AntiCheatSnapshotProcessor
         if (!_buffer.TryGetValue(steamId, out var snapshots))
             return;
 
-        foreach (var snapshot in snapshots)
-            ReturnSnapshotToPool(snapshot);
+        for (var i = 0; i < snapshots.Count; i++)
+            ReturnSnapshotToPool(snapshots[i]);
 
         snapshots.Clear();
         _buffer.Remove(steamId);
@@ -112,8 +103,8 @@ public static class AntiCheatSnapshotProcessor
         foreach (var kvp in _buffer)
         {
             var snapshots = kvp.Value;
-            foreach (var snapshot in snapshots)
-                ReturnSnapshotToPool(snapshot);
+            for (var i = 0; i < snapshots.Count; i++)
+                ReturnSnapshotToPool(snapshots[i]);
             snapshots.Clear();
         }
 
@@ -125,6 +116,7 @@ public static class AntiCheatSnapshotProcessor
         while (_isRunning)
         {
             yield return _flushWait;
+            DataHandler.IsConfigured = ThoriumConfigService.HasValidToken;
             if (_isRunning) FlushAll();
         }
     }
@@ -133,35 +125,39 @@ public static class AntiCheatSnapshotProcessor
     {
         _batchSnapshots.Clear();
         _keysToRemove.Clear();
+        _activeKeys.Clear();
 
+        // Phase 1: enumerate without modifying _buffer (assigning _buffer[key] increments version)
         foreach (var kvp in _buffer)
         {
-            var steamId = kvp.Key;
-            var snapshots = kvp.Value;
-
-            if (snapshots.Count == 0)
-            {
-                _keysToRemove.Add(steamId);
-                continue;
-            }
-
-            AntiCheatSnapshot antiCheatSnapshot = Pool.Get<AntiCheatSnapshot>();
-
-            antiCheatSnapshot.SteamId = steamId;
-            antiCheatSnapshot.Snapshots.Clear();
-            antiCheatSnapshot.Snapshots.AddRange(snapshots);
-
-            _batchSnapshots.Add(antiCheatSnapshot);
-
-            snapshots.Clear();
+            if (kvp.Value.Count == 0)
+                _keysToRemove.Add(kvp.Key);
+            else
+                _activeKeys.Add(kvp.Key);
         }
 
         for (var i = 0; i < _keysToRemove.Count; i++)
             _buffer.Remove(_keysToRemove[i]);
 
+        // Phase 2: swap outside enumeration
+        for (var i = 0; i < _activeKeys.Count; i++)
+        {
+            var steamId = _activeKeys[i];
+            var bufferList = _buffer[steamId];
+
+            var acs = Pool.Get<AntiCheatSnapshot>();
+            acs.SteamId = steamId;
+
+            var emptyList = acs.Snapshots;
+            acs.Snapshots = bufferList;
+            _buffer[steamId] = emptyList;
+
+            _batchSnapshots.Add(acs);
+        }
+
         try
         {
-            if (!ThoriumConfigService.HasValidToken)
+            if (!DataHandler.IsConfigured)
                 return;
 
             var caches = ThoriumEventPayload.TryDrainAndReset();
@@ -192,7 +188,8 @@ public static class AntiCheatSnapshotProcessor
                 var temp = acs;
                 Pool.Free(ref temp);
             }
-        } catch (Exception ex)
+        }
+        catch (Exception ex)
         {
             Debug.LogError($"Error flushing anti-cheat snapshots: {ex}");
         }

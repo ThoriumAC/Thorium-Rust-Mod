@@ -18,7 +18,7 @@ internal static class BasePlayer_PlayerInit_Patch
             DataHandler.SessionEventCount++;
             var SessionEventBuffer = DataHandler.SessionEventBuffer;
 
-            var ip = __instance.Connection?.ipaddress;
+            var ip = __instance.Connection?.IPAddressWithoutPort();
 
             BinaryEventWriter.WriteInt64(SessionEventBuffer, PlayerSnapshot.GetUnixTimestampMsCached());
             BinaryEventWriter.WriteBool(SessionEventBuffer, true);
@@ -30,6 +30,7 @@ internal static class BasePlayer_PlayerInit_Patch
             if (steamId == 0) return;
 
             PlayerServerStatsTracker.RegisterSessionStart(__instance, steamId, PlayerSnapshot.GetUnixTimestampMsCached());
+            PerPlayerCache.Register(__instance, steamId);
 
             var pos = __instance.transform.position;
             var combat = CombatData.Get();
