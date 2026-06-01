@@ -47,9 +47,11 @@ internal sealed class ThoriumEventPayload
             ArrayPool<byte>.Shared.Return(buf);
     }
 
+    private static readonly ThoriumEventPayload _shared = new();
+
     public static ThoriumEventPayload? TryDrainAndReset()
     {
-        var payload = new ThoriumEventPayload();
+        var payload = _shared;
 
         (payload.RpcEventBytes, payload.RpcEventLength) = DrainStream(DataHandler.RpcEventBuffer);
         (payload.KillEventBytes, payload.KillEventLength) = DrainStream(DataHandler.KillEventBuffer);

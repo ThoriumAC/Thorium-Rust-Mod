@@ -30,6 +30,7 @@ internal static class BasePlayer_PlayerInit_Patch
             if (steamId == 0) return;
 
             PlayerServerStatsTracker.RegisterSessionStart(__instance, steamId, PlayerSnapshot.GetUnixTimestampMsCached());
+            PerPlayerCache.Register(__instance, steamId);
 
             var pos = __instance.transform.position;
             var combat = CombatData.Get();

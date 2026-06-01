@@ -43,4 +43,17 @@ public class CombatData : Pool.IPooled
         data.Weapon = activeItem?.info.shortname;
         return data;
     }
+
+    public static CombatData FromPlayerCached(BasePlayer player, in BasePlayer.CachedState cached)
+    {
+        var activeItem = player.GetActiveItem();
+        var data = Get();
+        data.IsAiming = (cached.PlayerFlags & BasePlayer.PlayerFlags.Aiming) != 0;
+        data.IsAttacking = player.IsAttacking();
+        data.IsMounted = cached.IsMounted;
+        data.LastTargetId = player.lastDealtDamageTo;
+        data.LastAttackTimeUnixMs = player.lastDealtDamageTime;
+        data.Weapon = activeItem?.info.shortname;
+        return data;
+    }
 }

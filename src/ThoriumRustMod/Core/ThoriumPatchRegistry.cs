@@ -94,9 +94,9 @@ internal static class ThoriumPatchRegistry
                 () => AccessTools.Method(typeof(ServerMgr), nameof(ServerMgr.Initialize)),
                 postfix: new HarmonyMethod(typeof(Patch_OpenConnection), "Postfix")) &&
 
-            Apply("ServerMgr.OnPlayerTick",
-                () => AccessTools.Method(typeof(ServerMgr), nameof(ServerMgr.OnPlayerTick), new[] { typeof(Message) }),
-                prefix: new HarmonyMethod(typeof(ServerMgr_OnPlayerTick_Patch), "Prefix"));
+            Apply("BasePlayer.OnReceiveTick",
+                () => AccessTools.Method(typeof(BasePlayer), "OnReceiveTick", new[] { typeof(PlayerTick), typeof(bool) }),
+                postfix: new HarmonyMethod(typeof(BasePlayer_OnReceiveTick_Patch), "Postfix"));
     }
 
     public static void UnpatchAll()
