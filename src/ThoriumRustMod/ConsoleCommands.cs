@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Linq;
 using System.Threading.Tasks;
+using Facepunch;
 using ThoriumRustMod.Config;
 using ThoriumRustMod.Core;
 using ThoriumRustMod.Services;
@@ -61,15 +62,18 @@ public static class ConsoleCommands
             Call = callback
         };
 
-        ConsoleSystem.Index.Server.Dict[fullName] = newCommand;
+        StringView key = fullName;
+        ConsoleSystem.Index.Server.Dict[key] = newCommand;
+        ConsoleSystem.Index.Server.GlobalDict[key] = newCommand;
         ConsoleSystem.Index.All = ConsoleSystem.Index.All.Where(v => v.FullName != fullName).Append(newCommand).ToArray();
     }
 
     private static void UnregisterCommand(string name)
     {
         var fullName = $"{COMMAND_PREFIX}.{name}";
-
-        ConsoleSystem.Index.Server.Dict.Remove(fullName);
+        StringView key = fullName;
+        ConsoleSystem.Index.Server.Dict.Remove(key);
+        ConsoleSystem.Index.Server.GlobalDict.Remove(key);
         ConsoleSystem.Index.All = ConsoleSystem.Index.All.Where(v => v.FullName != fullName).ToArray();
     }
 
